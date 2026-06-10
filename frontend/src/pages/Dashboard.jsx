@@ -1,0 +1,87 @@
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import AppLayout, { StatusBadge, EUR } from "../components/AppLayout";
+import { api } from "../lib/api";
+import { Plus, FileText, CheckCircle2, Clock, XCircle } from "lucide-react";
+
+export default function Dashboard() {
+  const nav = useNavigate();
+  const [stats, setStats] = useState(null);
+  const [quotes, setQuotes] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const [s, q] = await Promise.all([api.get("/quotes/stats"), api.get("/quotes")]);
+      setStats(s.data); setQuotes(q.data);
+    })();
+  }, []);
+
+  const cards = [
+    { label: "Total quotes", value: stats?.total ?? "—", icon: FileText, color: "text-gray-700" },
+    { label: "Sent", value: stats?.by_status?.sent ?? "—", icon: Clock, color: "text-[#0066FF]" },
+    { label: "Accepted", value: stats?.by_status?.accepted ?? "—", icon: CheckCircle2, color: "text-emerald-600" },
+    { label: "Declined", value: stats?.by_status?.declined ?? "—", icon: XCircle, color: "text-red-500" },
+  ];
+
+  return (
+    <AppLayout
+      title="Dashboard"
+      action={
+        <button data-testid="dashboard-new-quote-btn" onClick={() => nav("/quotes/new")} className="q-btn-primary">
+          <Plus size={16} /> New quote
+        </button>
+      }
+    >
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {cards.map((c, i) => (
+          <div key={i} className="q-card p-5" data-testid={`stat-card-${c.label.toLowerCase().replace(/\s+/g, '-')}`}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs uppercase tracking-wider text-gray-500 font-medium">{c.label}</span>
+              <c.icon className={c.color} size={18} />
+            </div>
+            <div className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Manrope" }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="q-card p-5 mb-6 flex items-center justify-between" data-testid="accepted-value-card">
+        <div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Accepted revenue</div>
+          <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Manrope" }}>{EUR(stats?.accepted_value || 0)}</div>
+        </div>
+        {stats?.plan === "free" && (
+          <div className="text-sm text-gray-600">
+            <span className="font-medium">{stats?.total ?? 0}/{stats?.limit}</span> quotes used on Free plan
+            <button onClick={() => nav("/billing")} data-testid="upgrade-link" className="ml-3 q-link font-medium">Upgrade</button>
+          </div>
+        )}
+      </div>
+
+      <div className="q-card overflow-hidden" data-testid="recent-quotes-card">
+        <div className="px-6 py-4 border-b border-[#E5E7EB] flex items-center justify-between">
+          <h3 className="font-semibold" style={{ fontFamily: "Manrope" }}>Recent quotes</h3>
+          <button onClick={() => nav("/quotes")} data-testid="view-all-quotes" className="text-sm q-link">View all</button>
+        </div>
+        {quotes.length === 0 ? (
+          <div className="p-10 text-center text-gray-500 text-sm">No quotes yet. Create your first quote to get started.</div>
+        ) : (
+          <table className="q-table">
+            <thead>
+              <tr><th>Number</th><th>Client</th><th>Status</th><th className="text-right">Total</th></tr>
+            </thead>
+            <tbody>
+              {quotes.slice(0, 5).map((q) => (
+                <tr key={q.id} data-testid={`dash-quote-row-${q.quote_number}`} className="cursor-pointer" onClick={() => nav(`/quotes/${q.id}`)}>
+                  <td className="font-medium text-gray-900">#{q.quote_number}</td>
+                  <td>{q.client_name}</td>
+                  <td><StatusBadge status={q.status} /></td>
+                  <td className="text-right font-medium">{EUR(q.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </AppLayout>
+  );
+}
