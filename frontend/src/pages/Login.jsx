@@ -29,9 +29,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-white px-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-xl bg-black overflow-hidden mb-4">
-            <img src={LOGO_URL} alt="Quotify" className="w-full h-full object-cover" />
-          </div>
+          <img src={LOGO_URL} alt="Quotify" className="h-14 w-auto object-contain mb-4" />
           <h1 className="text-3xl font-semibold tracking-tight" style={{ fontFamily: "Manrope" }}>Welcome back</h1>
           <p className="text-sm text-gray-500 mt-1">Log in to manage your quotes</p>
         </div>

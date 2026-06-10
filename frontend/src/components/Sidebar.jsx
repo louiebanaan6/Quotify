@@ -19,14 +19,9 @@ export default function Sidebar() {
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-[#E5E7EB]" style={{ background: "#F7F8FA" }} data-testid="app-sidebar">
       <div className="h-[72px] flex items-center px-5 border-b border-[#E5E7EB]">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg overflow-hidden bg-black flex items-center justify-center">
-            <img src={LOGO_URL} alt="Quotify" className="w-full h-full object-cover" />
-          </div>
-          <div>
-            <div className="text-[15px] font-semibold tracking-tight" style={{ fontFamily: "Manrope" }}>Quotify</div>
-            <div className="text-[11px] text-gray-500 -mt-0.5">{user?.plan === "pro" ? "Pro plan" : "Free plan"}</div>
-          </div>
+        <div className="flex items-center w-full">
+          <img src={LOGO_URL} alt="Quotify" className="h-8 w-auto object-contain" />
+          <div className="text-[11px] text-gray-500 ml-auto">{user?.plan === "pro" ? "Pro plan" : "Free plan"}</div>
         </div>
       </div>
 
