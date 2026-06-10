@@ -25,9 +25,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from emergentintegrations.payments.stripe.checkout import (
-    StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
-)
+import stripe as stripe_lib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -850,42 +848,44 @@ async def send_invoice(invoice_id: str, req: SendQuoteRequest, user: dict = Depe
 # ---------- Stripe ----------
 PLAN_PRICE = {"pro": PRO_PRICE_EUR}
 
-def get_stripe(request: Request) -> StripeCheckout:
-    host_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    api_key = os.environ["STRIPE_API_KEY"]
-    return StripeCheckout(api_key=api_key, webhook_url=webhook_url)
-
 @api_router.post("/billing/checkout")
 async def billing_checkout(req: CheckoutRequest, request: Request, user: dict = Depends(get_current_user)):
-    amount = PLAN_PRICE["pro"]
+    stripe_lib.api_key = os.environ.get("STRIPE_API_KEY", "")
+    if not stripe_lib.api_key:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
     success_url = f"{req.origin_url}/billing?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{req.origin_url}/billing"
     metadata = {"user_id": user["id"], "plan": "pro", "email": user["email"]}
-    sc = get_stripe(request)
-    ck_req = CheckoutSessionRequest(amount=float(amount), currency="eur",
-                                    success_url=success_url, cancel_url=cancel_url, metadata=metadata)
-    session: CheckoutSessionResponse = await sc.create_checkout_session(ck_req)
+    session = await asyncio.to_thread(
+        stripe_lib.checkout.Session.create,
+        payment_method_types=["card"],
+        line_items=[{"price_data": {"currency": "eur", "product_data": {"name": "Quotify Pro"},
+                                    "unit_amount": int(PRO_PRICE_EUR * 100)}, "quantity": 1}],
+        mode="payment",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+    )
     await db.payment_transactions.insert_one({
         "id": str(uuid.uuid4()),
-        "session_id": session.session_id,
+        "session_id": session.id,
         "user_id": user["id"],
         "email": user["email"],
-        "amount": float(amount),
+        "amount": float(PRO_PRICE_EUR),
         "currency": "eur",
         "plan": "pro",
         "payment_status": "initiated",
         "metadata": metadata,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
-    return {"url": session.url, "session_id": session.session_id}
+    return {"url": session.url, "session_id": session.id}
 
 @api_router.get("/billing/status/{session_id}")
-async def billing_status(session_id: str, request: Request, user: dict = Depends(get_current_user)):
-    sc = get_stripe(request)
-    status: CheckoutStatusResponse = await sc.get_checkout_status(session_id)
+async def billing_status(session_id: str, user: dict = Depends(get_current_user)):
+    stripe_lib.api_key = os.environ.get("STRIPE_API_KEY", "")
+    session = await asyncio.to_thread(stripe_lib.checkout.Session.retrieve, session_id)
     txn = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["id"]})
-    if txn and txn.get("payment_status") != "paid" and status.payment_status == "paid":
+    if txn and txn.get("payment_status") != "paid" and session.payment_status == "paid":
         await db.payment_transactions.update_one(
             {"session_id": session_id},
             {"$set": {"payment_status": "paid", "completed_at": datetime.now(timezone.utc).isoformat()}}
@@ -893,30 +893,36 @@ async def billing_status(session_id: str, request: Request, user: dict = Depends
         await db.users.update_one({"id": user["id"]},
                                   {"$set": {"plan": "pro", "subscription_status": "active",
                                             "subscription_started": datetime.now(timezone.utc).isoformat()}})
-    return {"status": status.status, "payment_status": status.payment_status,
-            "amount_total": status.amount_total, "currency": status.currency}
+    return {"status": session.status, "payment_status": session.payment_status,
+            "amount_total": session.amount_total, "currency": session.currency}
 
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
+    stripe_lib.api_key = os.environ.get("STRIPE_API_KEY", "")
     body = await request.body()
     sig = request.headers.get("Stripe-Signature", "")
-    sc = get_stripe(request)
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     try:
-        evt = await sc.handle_webhook(body, sig)
+        if webhook_secret:
+            evt = stripe_lib.Webhook.construct_event(body, sig, webhook_secret)
+        else:
+            evt = stripe_lib.Event.construct_from({"type": "unknown"}, stripe_lib.api_key)
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return JSONResponse({"ok": False}, status_code=400)
-    if evt.payment_status == "paid":
-        meta = evt.metadata or {}
-        uid = meta.get("user_id")
-        if uid:
-            await db.users.update_one({"id": uid},
-                                      {"$set": {"plan": "pro", "subscription_status": "active"}})
-            await db.payment_transactions.update_one(
-                {"session_id": evt.session_id},
-                {"$set": {"payment_status": "paid",
-                          "completed_at": datetime.now(timezone.utc).isoformat()}}
-            )
+    if evt["type"] == "checkout.session.completed":
+        session = evt["data"]["object"]
+        if session.get("payment_status") == "paid":
+            meta = session.get("metadata", {})
+            uid = meta.get("user_id")
+            if uid:
+                await db.users.update_one({"id": uid},
+                                          {"$set": {"plan": "pro", "subscription_status": "active"}})
+                await db.payment_transactions.update_one(
+                    {"session_id": session["id"]},
+                    {"$set": {"payment_status": "paid",
+                              "completed_at": datetime.now(timezone.utc).isoformat()}}
+                )
     return {"ok": True}
 
 # ---------- App wiring ----------
