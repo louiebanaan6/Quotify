@@ -103,6 +103,7 @@ h1, h2, h3, h4, h5 {
 .q-badge-sent { background: #EFF6FF; color: #0066FF; }
 .q-badge-accepted { background: #ECFDF5; color: #10B981; }
 .q-badge-declined { background: #FEF2F2; color: #EF4444; }
+.q-badge-unpaid { background: #FEF9C3; color: #B45309; }
 
 .q-link { color: var(--q-primary); cursor: pointer; }
 .q-link:hover { text-decoration: underline; }

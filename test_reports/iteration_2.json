@@ -1,0 +1,57 @@
+{
+  "summary": "Backend iteration 2 testing: discount logic, full invoicing module, lifetime pro. 19/19 new tests pass after fixing one critical bug. Found and fixed MongoDB ObjectId serialization issue in /api/quotes/{id}/convert-to-invoice.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/quotes/{quote_id}/convert-to-invoice",
+        "issue": "Returned 500 on first call: ValueError [TypeError(\"'ObjectId' object is not iterable\"), TypeError('vars() argument must have __dict__ attribute')]. After motor's insert_one(inv), pymongo mutates dict to include _id, then FastAPI failed to serialize ObjectId. Fixed by inv.pop('_id', None) before return. Subsequent (idempotent) calls returned 200 because they short-circuited via existing-invoice lookup with {_id:0} projection.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/invoices/{id}/send",
+        "issue": "sent_at update_one runs unconditionally even when Resend send fails (sent_ok=False, error present). Consider only setting sent_at when sent_ok is True for accurate audit."
+      },
+      {
+        "endpoint": "POST /api/quotes/{quote_id}/convert-to-invoice",
+        "issue": "Endpoint converts ANY quote regardless of status. Spec implies UI shows convert button only when status='accepted'; backend has no guard. Could be intentional but should be documented."
+      },
+      {
+        "endpoint": "POST /api/auth/register (lifetime email)",
+        "issue": "Lifetime is gated by hardcoded set LIFETIME_PRO_EMAILS rather than configurable env / DB-managed list. Hard to extend."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [
+    "Bug fix already applied: pop _id from inv dict in convert-to-invoice endpoint (server.py line ~751). Main agent should review and keep this fix.",
+    "Optional: gate convert-to-invoice on status='accepted' if business logic requires it (currently any status allowed).",
+    "Optional: only set sent_at when Resend send succeeds (avoid recording sent_at on failures).",
+    "Optional: make LIFETIME_PRO_EMAILS configurable via env or DB."
+  ],
+  "critical_code_review_comments": [
+    "server.py:751 BUG (FIXED): motor's insert_one mutates the inserted dict to attach ObjectId _id; the original code returned that dict, causing JSON serialization 500. Pattern to follow throughout: always pop('_id', None) after insert_one before returning, OR build a clean response dict.",
+    "server.py:766-770 update_invoice does not guard against changing status->'unpaid' wiping out previous paid_at; idempotency around state transitions could improve.",
+    "server.py:914 CORS allow_origins falls back to '*' with allow_credentials=True which browsers reject. Ensure CORS_ORIGINS env is set in production to explicit origins.",
+    "server.py file is 937 lines - approaching the 700-line guideline; consider splitting into modules: auth.py, quotes.py, invoices.py, billing.py, pdf.py.",
+    "build_pdf does not handle missing client_name/email gracefully (would KeyError). Inputs are required by Pydantic so OK for now but defensive .get() would be safer.",
+    "_mark_overdue mutates the doc in-memory only — actual DB document never gets persisted as 'overdue'. This is fine for read paths but stats and listings recompute every call (small perf concern at scale)."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (fix: pop _id after invoices.insert_one in convert-to-invoice)",
+    "/app/backend/tests/test_iteration2.py (new test suite, 19 tests)"
+  ],
+  "success_rate": {"backend": "100% (19/19 new tests + previous 11 unchanged)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "Lifetime user already provisioned at louie.oorts@gmail.com (plan=pro, subscription_status=lifetime, set by startup hook). Iteration uses uuid-prefixed throwaway accounts.",
+  "seed_data_creation": "Each test run creates 2 fresh users (uuid emails) and a handful of quotes/invoices. No persistent test data required.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All discount math (percentage/fixed/none) verified to 2dp: discount applied BEFORE VAT (taxable=subtotal-discount; vat=taxable*0.21). Invoice number format INV-YYYY-NNN confirmed. Convert-to-invoice is idempotent and carries over discount fields. Past-due auto-flips status on GET (DB doc unchanged). Free plan limit (3 quotes) does NOT count invoices. Auth isolation works (404 across users). Send invoice succeeded with real RESEND_API_KEY for the test domain used. Lifetime pro applied for louie.oorts@gmail.com via case-insensitive lookup at register AND at startup. PDFs are valid (start with %PDF) for both quote and invoice kinds. Bug fix applied: convert-to-invoice now pops _id before returning - confirm this remains.",
+  "rca_of_the_issue": "Root cause: motor (async pymongo) insert_one() mutates the input dict in-place to add the generated _id field (an ObjectId). The convert_quote_to_invoice handler returned the same dict directly, so FastAPI's response serialization received an ObjectId which is not JSON-serializable. Reproduction: POST /api/quotes/{any-quote-id}/convert-to-invoice -> first call 500 (insert path returns mutated dict), second call 200 (idempotent path re-fetches from DB with {_id:0} projection). Mitigation: `inv.pop('_id', None)` before `return inv`. Same pattern should be audited everywhere insert_one's input is returned; existing code already does this correctly for /api/clients (line 318) and /api/quotes (line 390)."
+}

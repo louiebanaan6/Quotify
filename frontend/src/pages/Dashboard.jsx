@@ -7,12 +7,17 @@ import { Plus, FileText, CheckCircle2, Clock, XCircle } from "lucide-react";
 export default function Dashboard() {
   const nav = useNavigate();
   const [stats, setStats] = useState(null);
+  const [invStats, setInvStats] = useState(null);
   const [quotes, setQuotes] = useState([]);
 
   useEffect(() => {
     (async () => {
-      const [s, q] = await Promise.all([api.get("/quotes/stats"), api.get("/quotes")]);
-      setStats(s.data); setQuotes(q.data);
+      const [s, q, i] = await Promise.all([
+        api.get("/quotes/stats"),
+        api.get("/quotes"),
+        api.get("/invoices/stats"),
+      ]);
+      setStats(s.data); setQuotes(q.data); setInvStats(i.data);
     })();
   }, []);
 
@@ -44,18 +49,29 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="q-card p-5 mb-6 flex items-center justify-between" data-testid="accepted-value-card">
+      <div className="q-card p-5 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="revenue-card">
         <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Accepted revenue</div>
-          <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Manrope" }}>{EUR(stats?.accepted_value || 0)}</div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Paid revenue</div>
+          <div className="text-2xl font-semibold mt-1 text-emerald-600" style={{ fontFamily: "Manrope" }}>{EUR(invStats?.total_revenue || 0)}</div>
         </div>
-        {stats?.plan === "free" && (
-          <div className="text-sm text-gray-600">
-            <span className="font-medium">{stats?.total ?? 0}/{stats?.limit}</span> quotes used on Free plan
-            <button onClick={() => nav("/billing")} data-testid="upgrade-link" className="ml-3 q-link font-medium">Upgrade</button>
-          </div>
-        )}
+        <div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Unpaid</div>
+          <div className="text-2xl font-semibold mt-1 text-amber-600" style={{ fontFamily: "Manrope" }}>{EUR(invStats?.unpaid_total || 0)}</div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Overdue</div>
+          <div className="text-2xl font-semibold mt-1 text-red-500" style={{ fontFamily: "Manrope" }}>{EUR(invStats?.overdue_total || 0)}</div>
+        </div>
       </div>
+
+      {stats?.plan === "free" && (
+        <div className="q-card p-5 mb-6 flex items-center justify-between" data-testid="free-plan-card">
+          <div className="text-sm text-gray-600">
+            <span className="font-medium">{stats?.total ?? 0}/{stats?.limit}</span> quotes used on the Free plan
+          </div>
+          <button onClick={() => nav("/billing")} data-testid="upgrade-link" className="q-btn-primary">Upgrade to Pro</button>
+        </div>
+      )}
 
       <div className="q-card overflow-hidden" data-testid="recent-quotes-card">
         <div className="px-6 py-4 border-b border-[#E5E7EB] flex items-center justify-between">

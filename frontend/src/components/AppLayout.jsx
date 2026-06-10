@@ -22,6 +22,9 @@ export function StatusBadge({ status }) {
     sent: "q-badge q-badge-sent",
     accepted: "q-badge q-badge-accepted",
     declined: "q-badge q-badge-declined",
+    unpaid: "q-badge q-badge-unpaid",
+    paid: "q-badge q-badge-accepted",
+    overdue: "q-badge q-badge-declined",
   };
   return <span data-testid={`status-${status}`} className={map[status] || "q-badge q-badge-draft"}>{status}</span>;
 }

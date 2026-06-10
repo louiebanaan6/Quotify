@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AppLayout, { StatusBadge, EUR } from "../components/AppLayout";
 import { api, API } from "../lib/api";
-import { Download, Mail, Edit, Trash2, ArrowLeft, Check, X } from "lucide-react";
+import { Download, Mail, Edit, Trash2, ArrowLeft, Check, X, Receipt } from "lucide-react";
 import { toast } from "sonner";
 
 export default function QuoteDetail() {
@@ -41,6 +41,16 @@ export default function QuoteDetail() {
     await api.delete(`/quotes/${id}`);
     toast.success("Quote deleted");
     nav("/quotes");
+  };
+
+  const convertToInvoice = async () => {
+    try {
+      const { data } = await api.post(`/quotes/${id}/convert-to-invoice`);
+      toast.success(`Invoice ${data.invoice_number} created`);
+      nav(`/invoices/${data.id}`);
+    } catch (e) {
+      toast.error("Could not convert");
+    }
   };
 
   const downloadPdf = async () => {
@@ -107,6 +117,12 @@ export default function QuoteDetail() {
           <div className="flex justify-end">
             <div className="w-full max-w-xs space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>{EUR(q.subtotal)}</span></div>
+              {q.discount_type && q.discount_type !== "none" && q.discount_amount > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Discount {q.discount_type === "percentage" ? `(${q.discount_value}%)` : "(fixed)"}</span>
+                  <span>− {EUR(q.discount_amount)}</span>
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-gray-500">VAT ({Math.round(q.vat_rate*100)}%)</span><span>{EUR(q.vat)}</span></div>
               <div className="border-t border-[#E5E7EB] pt-2 flex justify-between text-base font-semibold" style={{ fontFamily: "Manrope" }} data-testid="detail-total">
                 <span>Total</span><span>{EUR(q.total)}</span>
@@ -123,6 +139,17 @@ export default function QuoteDetail() {
         </div>
 
         <div className="space-y-4">
+          {q.status === "accepted" && (
+            <div className="q-card p-6" style={{ borderColor: "#0066FF" }}>
+              <h3 className="font-semibold mb-2" style={{ fontFamily: "Manrope" }}>Ready to invoice?</h3>
+              <p className="text-xs text-gray-500 mb-3">This quote was accepted. Convert it to an invoice in one click.</p>
+              {q.invoice_id ? (
+                <button onClick={() => nav(`/invoices/${q.invoice_id}`)} className="q-btn-secondary w-full justify-center" data-testid="open-linked-invoice"><Receipt size={14}/> Open invoice</button>
+              ) : (
+                <button onClick={convertToInvoice} className="q-btn-primary w-full justify-center" data-testid="convert-to-invoice-btn"><Receipt size={14}/> Convert to invoice</button>
+              )}
+            </div>
+          )}
           <div className="q-card p-6">
             <h3 className="font-semibold mb-3" style={{ fontFamily: "Manrope" }}>Status</h3>
             <p className="text-xs text-gray-500 mb-3">Update the status after client response</p>

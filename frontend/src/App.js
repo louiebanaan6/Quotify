@@ -10,6 +10,8 @@ import Dashboard from "@/pages/Dashboard";
 import QuotesList from "@/pages/QuotesList";
 import QuoteForm from "@/pages/QuoteForm";
 import QuoteDetail from "@/pages/QuoteDetail";
+import InvoicesList from "@/pages/InvoicesList";
+import InvoiceDetail from "@/pages/InvoiceDetail";
 import Clients from "@/pages/Clients";
 import Settings from "@/pages/Settings";
 import Billing from "@/pages/Billing";
@@ -45,6 +47,8 @@ export default function App() {
             <Route path="/quotes/new" element={<Protected><QuoteForm /></Protected>} />
             <Route path="/quotes/:id" element={<Protected><QuoteDetail /></Protected>} />
             <Route path="/quotes/:id/edit" element={<Protected><QuoteForm /></Protected>} />
+            <Route path="/invoices" element={<Protected><InvoicesList /></Protected>} />
+            <Route path="/invoices/:id" element={<Protected><InvoiceDetail /></Protected>} />
             <Route path="/clients" element={<Protected><Clients /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/billing" element={<Protected><Billing /></Protected>} />

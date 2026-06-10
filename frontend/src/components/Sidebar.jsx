@@ -1,12 +1,13 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, Settings, CreditCard, LogOut, Plus } from "lucide-react";
+import { LayoutDashboard, FileText, Receipt, Users, Settings, CreditCard, LogOut, Plus } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { LOGO_URL } from "../lib/api";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, testid: "nav-dashboard" },
   { to: "/quotes", label: "Quotes", icon: FileText, testid: "nav-quotes" },
+  { to: "/invoices", label: "Invoices", icon: Receipt, testid: "nav-invoices" },
   { to: "/clients", label: "Clients", icon: Users, testid: "nav-clients" },
   { to: "/billing", label: "Billing", icon: CreditCard, testid: "nav-billing" },
   { to: "/settings", label: "Settings", icon: Settings, testid: "nav-settings" },
