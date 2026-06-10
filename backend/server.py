@@ -155,6 +155,7 @@ class QuoteCreate(BaseModel):
     notes: str = ""
     discount_type: DiscountType = "none"
     discount_value: float = 0
+    accent_color: Optional[str] = None
 
 class QuoteUpdate(BaseModel):
     client_id: Optional[str] = None
@@ -166,6 +167,7 @@ class QuoteUpdate(BaseModel):
     status: Optional[Literal["draft", "sent", "accepted", "declined"]] = None
     discount_type: Optional[DiscountType] = None
     discount_value: Optional[float] = None
+    accent_color: Optional[str] = None
 
 class ClientCreate(BaseModel):
     name: str
@@ -181,6 +183,8 @@ class SettingsUpdate(BaseModel):
     email_signature: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    language: Optional[str] = None
+    accent_color: Optional[str] = None
 
 class SendQuoteRequest(BaseModel):
     subject: Optional[str] = None
@@ -249,6 +253,8 @@ async def register(req: RegisterRequest, response: Response):
         "address": "",
         "phone": "",
         "logo_path": "",
+        "language": "en",
+        "accent_color": "#0066FF",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     apply_lifetime_pro_if_needed(user_doc)
@@ -364,6 +370,7 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
     line_items = [li.model_dump() for li in data.line_items]
     subtotal, discount_amount, vat, total = calculate_totals(line_items, data.discount_type, data.discount_value)
     qnum = await next_quote_number(user["id"])
+    accent = data.accent_color or user.get("accent_color") or "#0066FF"
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
@@ -383,6 +390,7 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
         "total": total,
         "status": "draft",
         "invoice_id": None,
+        "accent_color": accent,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -440,7 +448,11 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
                             topMargin=18 * mm, bottomMargin=18 * mm, title=f"{kind.title()} {number}")
     styles = getSampleStyleSheet()
-    BLUE = colors.HexColor("#0066FF")
+    accent_hex = doc_data.get("accent_color") or owner.get("accent_color") or "#0066FF"
+    try:
+        BLUE = colors.HexColor(accent_hex)
+    except Exception:
+        BLUE = colors.HexColor("#0066FF")
     DARK = colors.HexColor("#0A0A0A")
     MUTED = colors.HexColor("#6B7280")
     BORDER = colors.HexColor("#E5E7EB")
@@ -740,6 +752,7 @@ async def convert_quote_to_invoice(quote_id: str, user: dict = Depends(get_curre
         "status": "unpaid",
         "due_date": due.isoformat(),
         "payment_instructions": "",
+        "accent_color": q.get("accent_color") or "#0066FF",
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
         "paid_at": None,

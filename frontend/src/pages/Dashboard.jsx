@@ -2,10 +2,12 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout, { StatusBadge, EUR } from "../components/AppLayout";
 import { api } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 import { Plus, FileText, CheckCircle2, Clock, XCircle } from "lucide-react";
 
 export default function Dashboard() {
   const nav = useNavigate();
+  const { t } = useI18n();
   const [stats, setStats] = useState(null);
   const [invStats, setInvStats] = useState(null);
   const [quotes, setQuotes] = useState([]);
@@ -22,18 +24,18 @@ export default function Dashboard() {
   }, []);
 
   const cards = [
-    { label: "Total quotes", value: stats?.total ?? "—", icon: FileText, color: "text-gray-700" },
-    { label: "Sent", value: stats?.by_status?.sent ?? "—", icon: Clock, color: "text-[#0066FF]" },
-    { label: "Accepted", value: stats?.by_status?.accepted ?? "—", icon: CheckCircle2, color: "text-emerald-600" },
-    { label: "Declined", value: stats?.by_status?.declined ?? "—", icon: XCircle, color: "text-red-500" },
+    { label: t("dash.total_quotes"), value: stats?.total ?? "—", icon: FileText, color: "text-gray-700" },
+    { label: t("dash.sent"), value: stats?.by_status?.sent ?? "—", icon: Clock, color: "text-[#0066FF]" },
+    { label: t("dash.accepted"), value: stats?.by_status?.accepted ?? "—", icon: CheckCircle2, color: "text-emerald-600" },
+    { label: t("dash.declined"), value: stats?.by_status?.declined ?? "—", icon: XCircle, color: "text-red-500" },
   ];
 
   return (
     <AppLayout
-      title="Dashboard"
+      title={t("dash.title")}
       action={
         <button data-testid="dashboard-new-quote-btn" onClick={() => nav("/quotes/new")} className="q-btn-primary">
-          <Plus size={16} /> New quote
+          <Plus size={16} /> {t("nav.new_quote")}
         </button>
       }
     >
@@ -51,15 +53,15 @@ export default function Dashboard() {
 
       <div className="q-card p-5 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="revenue-card">
         <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Paid revenue</div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">{t("dash.paid_revenue")}</div>
           <div className="text-2xl font-semibold mt-1 text-emerald-600" style={{ fontFamily: "Manrope" }}>{EUR(invStats?.total_revenue || 0)}</div>
         </div>
         <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Unpaid</div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">{t("dash.unpaid")}</div>
           <div className="text-2xl font-semibold mt-1 text-amber-600" style={{ fontFamily: "Manrope" }}>{EUR(invStats?.unpaid_total || 0)}</div>
         </div>
         <div>
-          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">Overdue</div>
+          <div className="text-xs uppercase tracking-wider text-gray-500 font-medium">{t("dash.overdue")}</div>
           <div className="text-2xl font-semibold mt-1 text-red-500" style={{ fontFamily: "Manrope" }}>{EUR(invStats?.overdue_total || 0)}</div>
         </div>
       </div>
@@ -67,23 +69,23 @@ export default function Dashboard() {
       {stats?.plan === "free" && (
         <div className="q-card p-5 mb-6 flex items-center justify-between" data-testid="free-plan-card">
           <div className="text-sm text-gray-600">
-            <span className="font-medium">{stats?.total ?? 0}/{stats?.limit}</span> quotes used on the Free plan
+            <span className="font-medium">{stats?.total ?? 0}/{stats?.limit}</span> {t("dash.quotes_used")}
           </div>
-          <button onClick={() => nav("/billing")} data-testid="upgrade-link" className="q-btn-primary">Upgrade to Pro</button>
+          <button onClick={() => nav("/billing")} data-testid="upgrade-link" className="q-btn-primary">{t("dash.upgrade_pro")}</button>
         </div>
       )}
 
       <div className="q-card overflow-hidden" data-testid="recent-quotes-card">
         <div className="px-6 py-4 border-b border-[#E5E7EB] flex items-center justify-between">
-          <h3 className="font-semibold" style={{ fontFamily: "Manrope" }}>Recent quotes</h3>
-          <button onClick={() => nav("/quotes")} data-testid="view-all-quotes" className="text-sm q-link">View all</button>
+          <h3 className="font-semibold" style={{ fontFamily: "Manrope" }}>{t("dash.recent_quotes")}</h3>
+          <button onClick={() => nav("/quotes")} data-testid="view-all-quotes" className="text-sm q-link">{t("dash.view_all")}</button>
         </div>
         {quotes.length === 0 ? (
-          <div className="p-10 text-center text-gray-500 text-sm">No quotes yet. Create your first quote to get started.</div>
+          <div className="p-10 text-center text-gray-500 text-sm">{t("dash.no_quotes")}</div>
         ) : (
           <table className="q-table">
             <thead>
-              <tr><th>Number</th><th>Client</th><th>Status</th><th className="text-right">Total</th></tr>
+              <tr><th>{t("quote.number")}</th><th>{t("quote.client")}</th><th>{t("quote.status")}</th><th className="text-right">{t("quote.total")}</th></tr>
             </thead>
             <tbody>
               {quotes.slice(0, 5).map((q) => (

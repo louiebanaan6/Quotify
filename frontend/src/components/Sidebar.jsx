@@ -2,27 +2,28 @@ import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { LayoutDashboard, FileText, Receipt, Users, Settings, CreditCard, LogOut, Plus } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import { useI18n } from "../lib/i18n";
 import { LOGO_URL } from "../lib/api";
-
-const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, testid: "nav-dashboard" },
-  { to: "/quotes", label: "Quotes", icon: FileText, testid: "nav-quotes" },
-  { to: "/invoices", label: "Invoices", icon: Receipt, testid: "nav-invoices" },
-  { to: "/clients", label: "Clients", icon: Users, testid: "nav-clients" },
-  { to: "/billing", label: "Billing", icon: CreditCard, testid: "nav-billing" },
-  { to: "/settings", label: "Settings", icon: Settings, testid: "nav-settings" },
-];
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
+  const navItems = [
+    { to: "/", label: t("nav.dashboard"), icon: LayoutDashboard, end: true, testid: "nav-dashboard" },
+    { to: "/quotes", label: t("nav.quotes"), icon: FileText, testid: "nav-quotes" },
+    { to: "/invoices", label: t("nav.invoices"), icon: Receipt, testid: "nav-invoices" },
+    { to: "/clients", label: t("nav.clients"), icon: Users, testid: "nav-clients" },
+    { to: "/billing", label: t("nav.billing"), icon: CreditCard, testid: "nav-billing" },
+    { to: "/settings", label: t("nav.settings"), icon: Settings, testid: "nav-settings" },
+  ];
 
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-[#E5E7EB]" style={{ background: "#F7F8FA" }} data-testid="app-sidebar">
       <div className="h-[72px] flex items-center px-5 border-b border-[#E5E7EB]">
         <div className="flex items-center w-full">
           <img src={LOGO_URL} alt="Quotify" className="h-8 w-auto object-contain" />
-          <div className="text-[11px] text-gray-500 ml-auto">{user?.plan === "pro" ? "Pro plan" : "Free plan"}</div>
+          <div className="text-[11px] text-gray-500 ml-auto">{user?.plan === "pro" ? t("nav.pro_plan") : t("nav.free_plan")}</div>
         </div>
       </div>
 
@@ -32,7 +33,7 @@ export default function Sidebar() {
           onClick={() => navigate("/quotes/new")}
           className="q-btn-primary w-full justify-center"
         >
-          <Plus size={16} /> New quote
+          <Plus size={16} /> {t("nav.new_quote")}
         </button>
       </div>
 
@@ -61,7 +62,7 @@ export default function Sidebar() {
           onClick={async () => { await logout(); navigate("/login"); }}
           className="sidebar-link w-full"
         >
-          <LogOut size={18} /> <span>Log out</span>
+          <LogOut size={18} /> <span>{t("nav.logout")}</span>
         </button>
       </div>
     </aside>

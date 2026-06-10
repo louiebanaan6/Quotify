@@ -6,10 +6,14 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = checking, null = guest
 
+  const syncLang = (u) => {
+    if (u?.language) localStorage.setItem("quotify_lang", u.language);
+  };
+
   const refresh = async () => {
     try {
       const { data } = await api.get("/auth/me");
-      setUser(data);
+      setUser(data); syncLang(data);
       return data;
     } catch (e) {
       setUser(null);
@@ -22,13 +26,13 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     if (data.token) localStorage.setItem("quotify_token", data.token);
-    setUser(data.user);
+    setUser(data.user); syncLang(data.user);
     return data.user;
   };
   const register = async (name, email, password) => {
     const { data } = await api.post("/auth/register", { name, email, password });
     if (data.token) localStorage.setItem("quotify_token", data.token);
-    setUser(data.user);
+    setUser(data.user); syncLang(data.user);
     return data.user;
   };
   const logout = async () => {

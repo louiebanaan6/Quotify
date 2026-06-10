@@ -2,6 +2,7 @@ import React from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "sonner";
 
 import Login from "@/pages/Login";
@@ -38,6 +39,7 @@ export default function App() {
     <div className="App">
       <BrowserRouter>
         <AuthProvider>
+          <I18nProvider>
           <Toaster position="top-right" richColors closeButton />
           <Routes>
             <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
@@ -54,6 +56,7 @@ export default function App() {
             <Route path="/billing" element={<Protected><Billing /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </I18nProvider>
         </AuthProvider>
       </BrowserRouter>
     </div>
