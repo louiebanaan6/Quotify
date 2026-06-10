@@ -1,0 +1,83 @@
+{
+  "theme": "light",
+  "archetype": "Swiss & High-Contrast (Adapted for Clean SaaS)",
+  "design_philosophy": "Inspired by Toggl Track. Clean, minimal, professional, highly functional. Absolute zero decorative gradients. Every element serves an operational purpose.",
+  "colors": {
+    "primary": "#0066FF",
+    "primary_hover": "#0052CC",
+    "background_main": "#FFFFFF",
+    "background_sidebar": "#F7F8FA",
+    "surface_card": "#FFFFFF",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#6B7280",
+    "border": "#E5E7EB",
+    "badges": {
+      "draft": { "bg": "#F3F4F6", "text": "#4B5563" },
+      "sent": { "bg": "#EFF6FF", "text": "#0066FF" },
+      "accepted": { "bg": "#ECFDF5", "text": "#10B981" },
+      "declined": { "bg": "#FEF2F2", "text": "#EF4444" }
+    }
+  },
+  "typography": {
+    "font_heading": "Manrope, sans-serif",
+    "font_body": "Inter, sans-serif",
+    "scales": {
+      "h1": "text-2xl sm:text-3xl font-semibold tracking-tight text-[#0A0A0A]",
+      "h2": "text-xl sm:text-2xl font-semibold tracking-tight text-[#0A0A0A]",
+      "h3": "text-lg font-medium text-[#0A0A0A]",
+      "body": "text-sm text-[#4B5563] leading-relaxed",
+      "label": "text-xs font-medium uppercase tracking-wider text-[#6B7280]"
+    }
+  },
+  "layout": {
+    "sidebar": "Fixed left sidebar, width 256px (w-64), background #F7F8FA, border-r border-[#E5E7EB]. Flex col for navigation items. Icons + Labels.",
+    "topbar": "Flex row, items-center, justify-between. Height 72px (h-18). Background #FFFFFF, border-b border-[#E5E7EB]. Left: Page Title (H1). Right: Primary Action Button in solid blue.",
+    "main_content": "Padding p-8. Background #FFFFFF.",
+    "cards": "bg-white border border-[#E5E7EB] shadow-[0_2px_8px_rgba(0,0,0,0.04)] rounded-xl (12px radius). Internal padding p-6."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#0066FF] text-white hover:bg-[#0052CC] rounded-lg px-4 py-2 font-medium transition-colors border border-transparent shadow-sm",
+      "secondary": "bg-white text-[#4B5563] hover:bg-gray-50 border border-[#E5E7EB] rounded-lg px-4 py-2 font-medium transition-colors"
+    },
+    "badges": "rounded-full px-2.5 py-0.5 text-xs font-medium tracking-wide",
+    "inputs": "bg-white border border-[#E5E7EB] rounded-lg px-3 py-2 text-sm text-[#0A0A0A] focus:outline-none focus:ring-2 focus:ring-[#0066FF]/20 focus:border-[#0066FF]",
+    "table": "w-full text-left text-sm text-[#4B5563]. Th: font-medium text-[#6B7280] border-b border-[#E5E7EB] py-3. Td: py-4 border-b border-[#E5E7EB]."
+  },
+  "interactions": {
+    "hover": "Subtle background shifts for list items (hover:bg-gray-50), color shifts for buttons. No scaling or translating (keep it flat and professional).",
+    "active": "Primary button active state: bg-[#0040A8]."
+  },
+  "media": {
+    "logo": {
+      "url": "https://customer-assets.emergentagent.com/job_74d46ad1-6afe-4e78-99f8-de9159724950/artifacts/jo9tq7nd_image-removebg-preview%20%285%29.png",
+      "description": "Green leaf Quotify logo on black background. Use in sidebar header.",
+      "placement": "Sidebar top left"
+    },
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1658200542476-68e8adf747ff?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMGRlc2slMjBlbXB0eSUyMHN0YXRlfGVufDB8fHx8MTc4MTExNDQ3OHww&ixlib=rb-4.1.0&q=85",
+        "description": "Clean modern desk space.",
+        "category": "empty_state"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1672748341520-6a839e6c05bb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwxfHxzbWlsaW5nJTIwY29udHJhY3RvciUyMHByb2Zlc3Npb25hbCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MTExNDQ3OHww&ixlib=rb-4.1.0&q=85",
+        "description": "Smiling contractor in red hard hat.",
+        "category": "avatar_placeholder"
+      }
+    ]
+  },
+  "testing": "All interactive and key informational elements MUST include a data-testid attribute formatted as kebab-case, role-based.",
+  "instructions_to_main_agent": [
+    "Do NOT use gradients anywhere. Flat colors only.",
+    "Use Manrope for all headings (H1-H4) to satisfy design system constraints while keeping a clean aesthetic, and Inter for body text.",
+    "Use exactly #F7F8FA for the sidebar background.",
+    "Use 12px rounded corners (rounded-xl in Tailwind) for cards and modals.",
+    "Pill badges must use the exact status colors provided (Draft=Gray, Sent=Blue, Accepted=Green, Declined=Red).",
+    "Include the provided logo URL in the sidebar.",
+    "Ensure the layout is a fixed left sidebar with a top header for the main content.",
+    "All interface text in English.",
+    "Follow standard clean SaaS dashboard patterns with fully responsive HTML/Tailwind CSS components.",
+    "For icons, use lucide-react as standard."
+  ]
+}
