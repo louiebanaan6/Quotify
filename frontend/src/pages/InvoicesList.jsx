@@ -62,7 +62,7 @@ export default function InvoicesList() {
         </div>
         <div className="relative flex-1 min-w-[220px] max-w-md">
           <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-          <input data-testid="invoices-search" value={search} onChange={(e) => setSearch(e.target.value)} className="q-input pl-9" placeholder="Search by client or invoice number" />
+          <input data-testid="invoices-search" value={search} onChange={(e) => setSearch(e.target.value)} className="q-input !pl-9" placeholder="Search by client or invoice number" />
         </div>
       </div>
 

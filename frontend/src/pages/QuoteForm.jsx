@@ -182,7 +182,7 @@ export default function QuoteForm() {
                     data-testid="discount-value"
                     type="number" min="0" step="0.01"
                     disabled={form.discount_type === "none"}
-                    className="q-input pr-8"
+                    className="q-input !pr-9"
                     value={form.discount_value}
                     onChange={(e) => setForm({ ...form, discount_value: e.target.value })}
                   />
