@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / '.env')
 import os
 import io
 import uuid
+import random
 import asyncio
 import logging
 import bcrypt
@@ -39,12 +40,13 @@ JWT_ALGORITHM = "HS256"
 APP_NAME = os.environ.get('APP_NAME', 'quotify')
 EMERGENT_KEY = os.environ.get('EMERGENT_LLM_KEY')
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'noreply@quotify.site')
 resend.api_key = os.environ.get('RESEND_API_KEY', '')
 FREE_QUOTE_LIMIT = 3
 PRO_PRICE_EUR = 49.0
 VAT_RATE = 0.21
 LIFETIME_PRO_EMAILS = {"louie.oorts@gmail.com"}
+OTP_EXPIRE_MINUTES = 10
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -127,6 +129,84 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+# ---------- OTP helpers ----------
+def generate_otp() -> str:
+    return str(random.randint(100000, 999999))
+
+async def save_otp(email: str, otp: str, purpose: str):
+    """Save OTP to DB, expires in OTP_EXPIRE_MINUTES minutes."""
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRE_MINUTES)).isoformat()
+    await db.otps.delete_many({"email": email, "purpose": purpose})
+    await db.otps.insert_one({
+        "email": email,
+        "otp": otp,
+        "purpose": purpose,
+        "expires_at": expires_at,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+async def verify_otp(email: str, otp: str, purpose: str) -> bool:
+    record = await db.otps.find_one({"email": email, "purpose": purpose})
+    if not record:
+        return False
+    expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        await db.otps.delete_many({"email": email, "purpose": purpose})
+        return False
+    if record["otp"] != otp:
+        return False
+    await db.otps.delete_many({"email": email, "purpose": purpose})
+    return True
+
+async def send_otp_email(email: str, otp: str, purpose: str, name: str = ""):
+    """Send OTP via Resend."""
+    purpose_labels = {
+        "login": "sign in to",
+        "reset": "reset your password for",
+        "change_password": "change your password for",
+    }
+    action = purpose_labels.get(purpose, "access")
+
+    subject_map = {
+        "login": f"Your Quotify login code: {otp}",
+        "reset": f"Reset your Quotify password",
+        "change_password": f"Confirm your Quotify password change",
+    }
+    subject = subject_map.get(purpose, f"Your Quotify code: {otp}")
+
+    greeting = f"Hi {name}," if name else "Hi,"
+    html = f"""
+    <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px;">
+      <div style="margin-bottom:32px;">
+        <span style="font-size:22px;font-weight:800;color:#111;">🌿 QUOTIFY</span>
+      </div>
+      <h2 style="font-size:24px;font-weight:700;color:#111;margin-bottom:8px;">Your verification code</h2>
+      <p style="color:#666;margin-bottom:28px;">{greeting} Use the code below to {action} Quotify.</p>
+      <div style="background:#f8f9fa;border-radius:12px;padding:32px;text-align:center;margin-bottom:28px;">
+        <span style="font-size:48px;font-weight:900;letter-spacing:12px;color:#111;">{otp}</span>
+      </div>
+      <p style="color:#888;font-size:14px;">This code expires in <strong>{OTP_EXPIRE_MINUTES} minutes</strong>. If you didn't request this, you can safely ignore this email.</p>
+      <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0;" />
+      <p style="color:#aaa;font-size:12px;">© 2025 Quotify · support@quotify.site</p>
+    </div>
+    """
+
+    if resend.api_key:
+        try:
+            await asyncio.to_thread(resend.Emails.send, {
+                "from": SENDER_EMAIL,
+                "to": [email],
+                "subject": subject,
+                "html": html,
+            })
+            logger.info(f"OTP sent to {email} for {purpose}")
+        except Exception as e:
+            logger.error(f"Failed to send OTP email: {e}")
+    else:
+        logger.info(f"[MOCK OTP] To: {email} | Code: {otp} | Purpose: {purpose}")
+
 # ---------- Models ----------
 class RegisterRequest(BaseModel):
     name: str
@@ -136,6 +216,26 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class ChangePasswordVerifyRequest(BaseModel):
+    otp: str
+    new_password: str
 
 class LineItem(BaseModel):
     description: str
@@ -257,11 +357,13 @@ async def register(req: RegisterRequest, response: Response):
     }
     apply_lifetime_pro_if_needed(user_doc)
     await db.users.insert_one(user_doc)
-    token = create_access_token(user_id, email)
-    set_auth_cookie(response, token)
-    user_doc.pop("password_hash")
-    user_doc.pop("_id", None)
-    return {"user": user_doc, "token": token}
+
+    # Send OTP for login after register
+    otp = generate_otp()
+    await save_otp(email, otp, "login")
+    await send_otp_email(email, otp, "login", req.name)
+
+    return {"requires_otp": True, "email": email, "message": "Account created. Check your email for the login code."}
 
 @api_router.post("/auth/login")
 async def login(req: LoginRequest, response: Response):
@@ -269,10 +371,28 @@ async def login(req: LoginRequest, response: Response):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Send OTP
+    otp = generate_otp()
+    await save_otp(email, otp, "login")
+    await send_otp_email(email, otp, "login", user.get("name", ""))
+
+    return {"requires_otp": True, "email": email, "message": "Check your email for the login code."}
+
+@api_router.post("/auth/verify-otp")
+async def verify_login_otp(req: VerifyOTPRequest, response: Response):
+    email = req.email.lower().strip()
+    valid = await verify_otp(email, req.otp, "login")
+    if not valid:
+        raise HTTPException(status_code=400, detail="Invalid or expired code. Please try again.")
+
+    user = await db.users.find_one({"email": email}, {"_id": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user = apply_lifetime_pro_if_needed(user)
     token = create_access_token(user["id"], email)
     set_auth_cookie(response, token)
-    user.pop("password_hash", None)
-    user.pop("_id", None)
     return {"user": user, "token": token}
 
 @api_router.post("/auth/logout")
@@ -283,6 +403,80 @@ async def logout(response: Response):
 @api_router.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     return user
+
+# ---------- Password forgot/reset ----------
+@api_router.post("/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest):
+    email = req.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    # Always return success to prevent email enumeration
+    if user:
+        otp = generate_otp()
+        await save_otp(email, otp, "reset")
+        await send_otp_email(email, otp, "reset", user.get("name", ""))
+    return {"message": "If this email is registered, you'll receive a reset code shortly."}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(req: ResetPasswordRequest):
+    email = req.email.lower().strip()
+    valid = await verify_otp(email, req.otp, "reset")
+    if not valid:
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    await db.users.update_one(
+        {"email": email},
+        {"$set": {"password_hash": hash_password(req.new_password)}}
+    )
+    return {"ok": True, "message": "Password reset successfully. You can now log in."}
+
+# ---------- Change password (requires login + OTP) ----------
+@api_router.post("/auth/change-password/request")
+async def change_password_request(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    """Verify current password, then send OTP to email."""
+    db_user = await db.users.find_one({"id": user["id"]})
+    if not db_user or not verify_password(req.current_password, db_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
+
+    # Store new password hash temporarily (pending OTP confirmation)
+    pending_hash = hash_password(req.new_password)
+    await db.otps.delete_many({"email": user["email"], "purpose": "change_password"})
+    otp = generate_otp()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRE_MINUTES)).isoformat()
+    await db.otps.insert_one({
+        "email": user["email"],
+        "otp": otp,
+        "purpose": "change_password",
+        "pending_hash": pending_hash,
+        "expires_at": expires_at,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await send_otp_email(user["email"], otp, "change_password", user.get("name", ""))
+    return {"message": "Check your email for the confirmation code."}
+
+@api_router.post("/auth/change-password/verify")
+async def change_password_verify(req: ChangePasswordVerifyRequest, user: dict = Depends(get_current_user)):
+    """Confirm OTP and apply new password."""
+    record = await db.otps.find_one({"email": user["email"], "purpose": "change_password"})
+    if not record:
+        raise HTTPException(status_code=400, detail="No pending password change found.")
+    expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        await db.otps.delete_many({"email": user["email"], "purpose": "change_password"})
+        raise HTTPException(status_code=400, detail="Code expired. Please try again.")
+    if record["otp"] != req.otp:
+        raise HTTPException(status_code=400, detail="Invalid code.")
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_hash": record["pending_hash"]}}
+    )
+    await db.otps.delete_many({"email": user["email"], "purpose": "change_password"})
+    return {"ok": True, "message": "Password changed successfully."}
 
 # ---------- Settings ----------
 @api_router.put("/settings")
@@ -304,7 +498,6 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(get_cur
 
 @api_router.get("/files/{path:path}")
 async def serve_file(path: str, authorization: str = Header(None), auth: str = Query(None)):
-    # Public-ish: anyone with the path can fetch (logos used in PDFs etc.)
     data, ct = get_object(path)
     return Response(content=data, media_type=ct)
 
@@ -360,7 +553,6 @@ async def quotes_stats(user: dict = Depends(get_current_user)):
 
 @api_router.post("/quotes")
 async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)):
-    # Free plan limit
     if user.get("plan", "free") == "free":
         count = await db.quotes.count_documents({"user_id": user["id"]})
         if count >= FREE_QUOTE_LIMIT:
@@ -409,7 +601,6 @@ async def update_quote(quote_id: str, data: QuoteUpdate, user: dict = Depends(ge
     if not q:
         raise HTTPException(status_code=404, detail="Quote not found")
     update = {k: v for k, v in data.model_dump().items() if v is not None}
-    # Recalculate when any total-affecting field changes
     needs_recalc = any(k in update for k in ("line_items", "discount_type", "discount_value"))
     if needs_recalc:
         current = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
@@ -466,7 +657,6 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
 
     story = []
 
-    # Header
     logo_flow = Paragraph(f"<b>{owner.get('company_name') or owner.get('name') or 'Quotify'}</b>", h1)
     try:
         if owner.get("logo_path"):
@@ -487,7 +677,6 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
     if owner.get('vat_number'):
         company_info_lines.append(f"VAT: {owner['vat_number']}")
 
-    # Invoice layout: logo top-right, client top-left. Quote layout: company top-left, QUOTE top-right.
     if is_invoice:
         left_cell = [Paragraph("BILL TO", label),
                      Paragraph(f"<b>{doc_data['client_name']}</b>", body),
@@ -520,7 +709,6 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
     story.append(Spacer(1, 14))
 
     if is_invoice:
-        # Show company block under header for invoices
         story.append(Paragraph("FROM", label))
         story.append(Paragraph("<br/>".join(company_info_lines), small))
         story.append(Spacer(1, 14))
@@ -535,7 +723,6 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
         story.append(Paragraph(doc_data["project_description"].replace("\n", "<br/>"), body))
         story.append(Spacer(1, 14))
 
-    # Line items table
     head = ["Description", "Qty", "Unit Price", "Amount"]
     rows = [head]
     for li in doc_data["line_items"]:
@@ -564,7 +751,6 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
     story.append(tbl)
     story.append(Spacer(1, 12))
 
-    # Totals
     totals = [["Subtotal", f"€ {doc_data['subtotal']:,.2f}"]]
     d_type = doc_data.get("discount_type", "none")
     d_amount = doc_data.get("discount_amount", 0) or 0
@@ -598,7 +784,6 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
         story.append(Paragraph(doc_data["notes"].replace("\n", "<br/>"), body))
         story.append(Spacer(1, 10))
 
-    # Footer
     if is_invoice:
         story.append(Spacer(1, 8))
         story.append(Paragraph("PAYMENT", label))
@@ -662,10 +847,7 @@ async def send_quote(quote_id: str, req: SendQuoteRequest, user: dict = Depends(
                 "to": [q["client_email"]],
                 "subject": subject,
                 "html": body_html,
-                "attachments": [{
-                    "filename": f"quote-{q['quote_number']}.pdf",
-                    "content": encoded,
-                }],
+                "attachments": [{"filename": f"quote-{q['quote_number']}.pdf", "content": encoded}],
             }
             await asyncio.to_thread(resend.Emails.send, params)
             sent_ok = True
@@ -673,13 +855,11 @@ async def send_quote(quote_id: str, req: SendQuoteRequest, user: dict = Depends(
             error = str(e)
             logger.error(f"Resend error: {e}")
     else:
-        # MOCKED EMAIL - log only (no Resend key configured)
         logger.info(f"[MOCK EMAIL] To: {q['client_email']} | Subject: {subject}")
         sent_ok = True
 
     await db.quotes.update_one({"id": quote_id, "user_id": user["id"]},
-                               {"$set": {"status": "sent",
-                                         "sent_at": datetime.now(timezone.utc).isoformat()}})
+                               {"$set": {"status": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}})
     return {"ok": sent_ok, "mocked": not bool(resend.api_key), "error": error}
 
 # ---------- Invoices ----------
@@ -943,7 +1123,8 @@ async def startup():
     await db.quotes.create_index([("user_id", 1), ("created_at", -1)])
     await db.invoices.create_index([("user_id", 1), ("created_at", -1)])
     await db.clients.create_index([("user_id", 1), ("created_at", -1)])
-    # Lifetime Pro upgrade for special emails
+    await db.otps.create_index("expires_at", expireAfterSeconds=0)
+    await db.otps.create_index([("email", 1), ("purpose", 1)])
     for email in LIFETIME_PRO_EMAILS:
         await db.users.update_one(
             {"email": email},
