@@ -40,7 +40,7 @@ JWT_ALGORITHM = "HS256"
 APP_NAME = os.environ.get('APP_NAME', 'quotify')
 EMERGENT_KEY = os.environ.get('EMERGENT_LLM_KEY')
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-SENDER_EMAIL = 'Quotify <noreply@quotify.site>'
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'Quotify <noreply@quotify.site>')
 resend.api_key = os.environ.get('RESEND_API_KEY', '')
 FREE_QUOTE_LIMIT = 3
 PRO_PRICE_EUR = 49.0
@@ -401,8 +401,24 @@ async def logout(response: Response):
     return {"ok": True}
 
 @api_router.get("/auth/me")
-async def me(user: dict = Depends(get_current_user)):
-    return user
+async def me(request: Request) -> dict:
+    token = request.cookies.get("access_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ---------- Password forgot/reset ----------
 @api_router.post("/auth/forgot-password")
@@ -489,17 +505,27 @@ async def update_settings(data: SettingsUpdate, user: dict = Depends(get_current
 
 @api_router.post("/settings/logo")
 async def upload_logo(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "png").lower()
-    path = f"{APP_NAME}/logos/{user['id']}/{uuid.uuid4()}.{ext}"
+    import base64
     data = await file.read()
-    result = put_object(path, data, file.content_type or "image/png")
-    await db.users.update_one({"id": user["id"]}, {"$set": {"logo_path": result["path"]}})
-    return {"logo_path": result["path"]}
+    if len(data) > 2 * 1024 * 1024:  # 2MB limit
+        raise HTTPException(status_code=400, detail="Logo must be smaller than 2MB.")
+    ct = file.content_type or "image/png"
+    b64 = base64.b64encode(data).decode("utf-8")
+    logo_data_url = f"data:{ct};base64,{b64}"
+    await db.users.update_one({"id": user["id"]}, {"$set": {"logo_data": logo_data_url, "logo_path": "db"}})
+    return {"logo_path": "db", "logo_data": logo_data_url}
 
 @api_router.get("/files/{path:path}")
-async def serve_file(path: str, authorization: str = Header(None), auth: str = Query(None)):
-    data, ct = get_object(path)
-    return Response(content=data, media_type=ct)
+async def serve_file(path: str, user_id: str = Query(None)):
+    # Legacy file serving — now logos are stored in DB as base64
+    raise HTTPException(status_code=404, detail="File not found")
+
+@api_router.get("/settings/logo")
+async def get_logo(user: dict = Depends(get_current_user)):
+    db_user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "logo_data": 1})
+    if not db_user or not db_user.get("logo_data"):
+        raise HTTPException(status_code=404, detail="No logo")
+    return {"logo_data": db_user["logo_data"]}
 
 # ---------- Clients ----------
 @api_router.get("/clients")
