@@ -104,7 +104,6 @@ export default function Billing() {
           }
         />
       </div>
-      <p className="text-xs text-gray-500 mt-6">Test environment uses Stripe test card 4242 4242 4242 4242. No real charges.</p>
     </AppLayout>
   );
 }
