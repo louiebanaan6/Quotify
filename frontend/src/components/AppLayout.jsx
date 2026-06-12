@@ -5,7 +5,7 @@ export default function AppLayout({ title, action, children }) {
   return (
     <div className="App flex min-h-screen bg-white">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 pt-[56px] md:pt-0">
         <header className="h-[72px] flex items-center justify-between px-6 md:px-10 border-b border-[#E5E7EB] bg-white">
           <h1 className="text-xl md:text-2xl font-semibold tracking-tight" style={{ fontFamily: "Manrope" }} data-testid="page-title">{title}</h1>
           <div>{action}</div>
