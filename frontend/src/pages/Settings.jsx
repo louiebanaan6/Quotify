@@ -17,8 +17,7 @@ export default function Settings() {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Password change state
-  const [pwStep, setPwStep] = useState("idle"); // idle | sending | otp
+  const [pwStep, setPwStep] = useState("idle"); // idle | otp
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -68,21 +67,20 @@ export default function Settings() {
       const res = await api.post("/settings/logo", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setForm({ ...form, logo_path: res.data.logo_path, logo_data: res.data.logo_data });
+      setForm((prev) => ({ ...prev, logo_path: res.data.logo_path, logo_data: res.data.logo_data }));
       refresh();
       toast.success("Logo uploaded");
     } catch (e) {
-      const detail = e.response?.data?.detail || "Upload failed";
-      toast.error(detail);
+      toast.error(e.response?.data?.detail || "Logo upload failed");
     }
   };
 
-  // Step 1: verify current password → sends OTP
   const requestPasswordChange = async (e) => {
     e.preventDefault();
+    setPwErr("");
     if (newPw !== confirmPw) { setPwErr("Passwords do not match."); return; }
     if (newPw.length < 8) { setPwErr("New password must be at least 8 characters."); return; }
-    setPwBusy(true); setPwErr("");
+    setPwBusy(true);
     try {
       await api.post("/auth/change-password/request", {
         current_password: currentPw,
@@ -95,7 +93,6 @@ export default function Settings() {
     } finally { setPwBusy(false); }
   };
 
-  // Step 2: verify OTP → password changed
   const confirmPasswordChange = async (e) => {
     e.preventDefault();
     setPwBusy(true); setPwErr("");
@@ -107,6 +104,19 @@ export default function Settings() {
     } catch (ex) {
       setPwErr(ex.response?.data?.detail || "Invalid or expired code.");
     } finally { setPwBusy(false); }
+  };
+
+  const resendPasswordOtp = async () => {
+    setPwErr("");
+    try {
+      await api.post("/auth/change-password/request", {
+        current_password: currentPw,
+        new_password: newPw,
+      });
+      toast.success("New code sent!");
+    } catch {
+      toast.error("Could not resend code.");
+    }
   };
 
   const cancelPasswordChange = () => {
@@ -157,13 +167,10 @@ export default function Settings() {
                 <div className="flex gap-2 mt-2">
                   {COLOR_PRESETS.map((c) => (
                     <button
-                      type="button"
-                      key={c}
+                      type="button" key={c}
                       onClick={() => setForm({ ...form, accent_color: c })}
-                      data-testid={`color-preset-${c}`}
                       className={`w-6 h-6 rounded-full border-2 transition ${form.accent_color === c ? "border-gray-900 scale-110" : "border-white shadow-sm"}`}
-                      style={{ background: c }}
-                      title={c}
+                      style={{ background: c }} title={c}
                     />
                   ))}
                 </div>
@@ -216,13 +223,8 @@ export default function Settings() {
               </div>
               <label className="q-btn-secondary cursor-pointer" data-testid="upload-logo-label">
                 <Upload size={14} /> {t("settings.upload_logo")}
-                <input
-                  data-testid="upload-logo-input"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => uploadLogo(e.target.files?.[0])}
-                />
+                <input data-testid="upload-logo-input" type="file" accept="image/*" className="hidden"
+                  onChange={(e) => uploadLogo(e.target.files?.[0])} />
               </label>
             </div>
           </div>
@@ -246,44 +248,36 @@ export default function Settings() {
               <form onSubmit={requestPasswordChange} className="space-y-3">
                 <div>
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Current password</label>
-                  <input
-                    type="password"
-                    required
-                    value={currentPw}
+                  <input type="password" required value={currentPw}
                     onChange={(e) => setCurrentPw(e.target.value)}
-                    className="q-input mt-1"
-                    placeholder="••••••••"
-                  />
+                    className="q-input mt-1" placeholder="••••••••" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">New password</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={newPw}
+                  <input type="password" required minLength={8} value={newPw}
                     onChange={(e) => setNewPw(e.target.value)}
-                    className="q-input mt-1"
-                    placeholder="At least 8 characters"
-                  />
+                    className={`q-input mt-1 ${newPw && newPw.length < 8 ? "border-red-400" : ""}`}
+                    placeholder="At least 8 characters" />
+                  {newPw && newPw.length < 8 && (
+                    <p className="text-xs text-red-500 mt-1">At least 8 characters required</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">Confirm new password</label>
-                  <input
-                    type="password"
-                    required
-                    value={confirmPw}
+                  <input type="password" required value={confirmPw}
                     onChange={(e) => setConfirmPw(e.target.value)}
-                    className="q-input mt-1"
-                    placeholder="••••••••"
-                  />
+                    className={`q-input mt-1 ${confirmPw && confirmPw !== newPw ? "border-red-400" : confirmPw && confirmPw === newPw ? "border-green-400" : ""}`}
+                    placeholder="••••••••" />
+                  {confirmPw && confirmPw !== newPw && (
+                    <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+                  )}
+                  {confirmPw && confirmPw === newPw && newPw.length >= 8 && (
+                    <p className="text-xs text-green-600 mt-1">Passwords match</p>
+                  )}
                 </div>
                 {pwErr && <p className="text-sm text-red-600">{pwErr}</p>}
-                <button
-                  type="submit"
-                  disabled={pwBusy}
-                  className="q-btn-secondary w-full justify-center text-sm"
-                >
+                <button type="submit" disabled={pwBusy || !currentPw || newPw.length < 8 || newPw !== confirmPw}
+                  className="q-btn-secondary w-full justify-center text-sm disabled:opacity-50">
                   {pwBusy ? "Sending code…" : "Send confirmation code"}
                 </button>
               </form>
@@ -293,23 +287,26 @@ export default function Settings() {
               <form onSubmit={confirmPasswordChange} className="space-y-3">
                 <p className="text-sm text-gray-600">Enter the 6-digit code sent to your email to confirm the password change.</p>
                 <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  required
-                  autoFocus
-                  value={pwOtp}
-                  onChange={(e) => setPwOtp(e.target.value.replace(/\D/g, ""))}
+                  type="text" inputMode="numeric" maxLength={6} required autoFocus
+                  value={pwOtp} onChange={(e) => setPwOtp(e.target.value.replace(/\D/g, ""))}
                   className="q-input text-center text-2xl tracking-[0.5em] font-semibold"
                   placeholder="000000"
                 />
                 {pwErr && <p className="text-sm text-red-600">{pwErr}</p>}
-                <button type="submit" disabled={pwBusy} className="q-btn-primary w-full justify-center text-sm">
+                <button type="submit" disabled={pwBusy || pwOtp.length < 6}
+                  className="q-btn-primary w-full justify-center text-sm disabled:opacity-50">
                   {pwBusy ? "Verifying…" : "Confirm change"}
                 </button>
-                <button type="button" onClick={cancelPasswordChange} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-1">
-                  Cancel
-                </button>
+                <div className="flex items-center justify-between pt-1">
+                  <button type="button" onClick={cancelPasswordChange}
+                    className="text-sm text-gray-400 hover:text-gray-600">
+                    Cancel
+                  </button>
+                  <button type="button" onClick={resendPasswordOtp}
+                    className="text-sm q-link">
+                    Didn't get a code? Resend
+                  </button>
+                </div>
               </form>
             )}
           </div>
