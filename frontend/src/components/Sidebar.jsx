@@ -152,7 +152,14 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     if (tab !== "team") return;
     setLoadingMembers(true);
     api.get(`/projects/${project.id}/members`)
-      .then((r) => setMembers(r.data))
+      .then((r) => {
+        // Response is now {owner_id, members:[...]}
+        if (Array.isArray(r.data)) {
+          setMembers(r.data);
+        } else {
+          setMembers(r.data.members || []);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoadingMembers(false));
   }, [tab, project.id]);
@@ -407,6 +414,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                   <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
                 ) : (
                   <div className="space-y-1">
+                    {/* Owner row — show current user with correct badge */}
                     <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50">
                       <div className="w-8 h-8 rounded-full bg-[#0066FF] flex items-center justify-center text-white text-xs font-semibold shrink-0">
                         {(user?.name || "?")[0].toUpperCase()}
@@ -415,7 +423,9 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                         <p className="text-[13px] font-medium text-gray-900 truncate">{user?.name}</p>
                         <p className="text-xs text-gray-500 truncate">{user?.email}</p>
                       </div>
-                      <span className="text-[10px] font-semibold text-[#0066FF] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full shrink-0">Owner</span>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${isOwner ? "text-[#0066FF] bg-blue-50 border border-blue-100" : "text-gray-500 bg-gray-100 border border-gray-200"}`}>
+                        {isOwner ? "Owner" : "Member"}
+                      </span>
                     </div>
 
                     {members.map((m) => (
