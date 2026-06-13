@@ -95,6 +95,40 @@ function ProjectLogo({ project, onUploaded, size = 64 }) {
   );
 }
 
+
+// ─── Invite notification banner ─────────────────────────────────
+function InviteBanner({ invites, onAccept, onDecline }) {
+  if (!invites || invites.length === 0) return null;
+  return (
+    <div className="mx-2 mb-2 space-y-2">
+      {invites.map((inv) => (
+        <div
+          key={inv.id}
+          className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5"
+        >
+          <p className="text-[11px] font-semibold text-[#0066FF] mb-0.5">Project invitation</p>
+          <p className="text-[12px] text-gray-800 font-medium truncate">{inv.project_name}</p>
+          <p className="text-[11px] text-gray-500 mb-2">You've been invited to join this project.</p>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => onAccept(inv.token)}
+              className="flex-1 py-1 rounded-lg bg-[#0066FF] text-white text-[11px] font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Accept
+            </button>
+            <button
+              onClick={() => onDecline(inv.id)}
+              className="flex-1 py-1 rounded-lg bg-white border border-[#E5E7EB] text-gray-600 text-[11px] font-medium hover:bg-gray-50 transition-colors"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Project settings modal ──────────────────────────────────────
 function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProjectDeleted }) {
   const navigate = useNavigate();
@@ -511,7 +545,29 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 )}
               </div>
             </div>
-          )}
+
+            {/* Leave project (non-owners) */}
+            {!isOwner && (
+              <div className="border border-red-200 rounded-xl p-4 bg-red-50 mt-4">
+                <p className="text-sm font-semibold text-red-800 mb-1">Leave project</p>
+                <p className="text-xs text-red-600 mb-3">You will lose access to all quotes, invoices and clients in this project.</p>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`Leave "${project.name}"?`)) return;
+                    try {
+                      await leaveProject(project.id);
+                      toast.success("Left project");
+                      onClose();
+                    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors"
+                >
+                  <LogOut size={13} /> Leave project
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
           {/* ── Danger ── */}
           {tab === "danger" && isOwner && (
@@ -556,7 +612,7 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { projects, activeProject, switchProject, createProject, loadProjects, setActiveProject } = useProject();
+  const { projects, activeProject, switchProject, createProject, loadProjects, setActiveProject, pendingInvites, acceptInvite, declineInvite, leaveProject } = useProject();
 
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "true"
@@ -852,6 +908,13 @@ export default function Sidebar() {
           </button>
         </div>
       )}
+
+      {/* Pending invite notifications */}
+      <InviteBanner
+        invites={pendingInvites}
+        onAccept={async (token) => { try { await acceptInvite(token); toast.success("Joined project!"); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); } }}
+        onDecline={async (id) => { try { await declineInvite(id); } catch (e) { toast.error("Failed"); } }}
+      />
 
       {/* Project switcher */}
       <ProjectSwitcher />
