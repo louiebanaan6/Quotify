@@ -16,10 +16,8 @@ import QuoteDetail from "@/pages/QuoteDetail";
 import InvoicesList from "@/pages/InvoicesList";
 import InvoiceDetail from "@/pages/InvoiceDetail";
 import Clients from "@/pages/Clients";
-import Settings from "@/pages/Settings";
-import Billing from "@/pages/Billing";
 import Profile from "@/pages/Profile";
-import TeamSettings from "@/pages/TeamSettings";
+import Billing from "@/pages/Billing";
 
 function Protected({ children }) {
   const { user } = useAuth();
@@ -47,9 +45,12 @@ export default function App() {
             <ProjectProvider>
               <Toaster position="top-right" richColors closeButton />
               <Routes>
+                {/* Public */}
                 <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
                 <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
                 <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
+
+                {/* Protected */}
                 <Route path="/" element={<Protected><Dashboard /></Protected>} />
                 <Route path="/quotes" element={<Protected><QuotesList /></Protected>} />
                 <Route path="/quotes/new" element={<Protected><QuoteForm /></Protected>} />
@@ -58,12 +59,10 @@ export default function App() {
                 <Route path="/invoices" element={<Protected><InvoicesList /></Protected>} />
                 <Route path="/invoices/:id" element={<Protected><InvoiceDetail /></Protected>} />
                 <Route path="/clients" element={<Protected><Clients /></Protected>} />
-                <Route path="/settings" element={<Protected><Settings /></Protected>} />
                 <Route path="/profile" element={<Protected><Profile /></Protected>} />
-                {/* /billing blijft werken als directe link maar zit ook in /profile?tab=billing */}
+                {/* /billing still works as direct link; also accessible via /profile?tab=billing */}
                 <Route path="/billing" element={<Protected><Billing /></Protected>} />
-                <Route path="/team/:projectId" element={<Protected><TeamSettings /></Protected>} />
-                <Route path="/team" element={<Protected><TeamSettings /></Protected>} />
+
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </ProjectProvider>
