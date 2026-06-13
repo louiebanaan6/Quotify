@@ -2,12 +2,14 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout, { StatusBadge, EUR } from "../components/AppLayout";
 import { api } from "../lib/api";
+import { useProject } from "../lib/ProjectContext";
 import { Search, Receipt, TrendingUp, AlertTriangle, Clock } from "lucide-react";
 
 const FILTERS = ["all", "unpaid", "paid", "overdue"];
 
 export default function InvoicesList() {
   const nav = useNavigate();
+  const { dataKey } = useProject();
   const [invoices, setInvoices] = useState([]);
   const [stats, setStats] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -16,7 +18,7 @@ export default function InvoicesList() {
   useEffect(() => {
     api.get("/invoices").then((r) => setInvoices(r.data));
     api.get("/invoices/stats").then((r) => setStats(r.data));
-  }, []);
+  }, [dataKey]); // re-fetch when project switches
 
   const filtered = invoices
     .filter((i) => filter === "all" || i.status === filter)
