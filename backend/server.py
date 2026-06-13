@@ -235,6 +235,17 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
+class ProjectSettingsUpdate(BaseModel):
+    company_name: Optional[str] = None
+    vat_number: Optional[str] = None
+    bank_account: Optional[str] = None
+    email_signature: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    language: Optional[str] = None
+    accent_color: Optional[str] = None
+    logo_data: Optional[str] = None
+
 class InviteMemberRequest(BaseModel):
     email: EmailStr
 
@@ -620,6 +631,50 @@ async def update_project(project_id: str, data: ProjectUpdate, user: dict = Depe
     if update:
         await db.projects.update_one({"id": project_id}, {"$set": update})
     return await db.projects.find_one({"id": project_id}, {"_id": 0})
+
+@api_router.get("/projects/{project_id}/settings")
+async def get_project_settings(project_id: str, user: dict = Depends(get_current_user)):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    is_owner = project["owner_id"] == user["id"]
+    is_member = await db.team_members.find_one({"project_id": project_id, "member_email": user["email"], "status": "accepted"})
+    if not is_owner and not is_member:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return project
+
+@api_router.put("/projects/{project_id}/settings")
+async def update_project_settings(project_id: str, data: ProjectSettingsUpdate, user: dict = Depends(get_current_user)):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    is_owner = project["owner_id"] == user["id"]
+    is_member = await db.team_members.find_one({"project_id": project_id, "member_email": user["email"], "status": "accepted"})
+    if not is_owner and not is_member:
+        raise HTTPException(status_code=403, detail="Access denied")
+    update = {k: v for k, v in data.model_dump().items() if v is not None}
+    if update:
+        await db.projects.update_one({"id": project_id}, {"$set": update})
+    return await db.projects.find_one({"id": project_id}, {"_id": 0})
+
+@api_router.post("/projects/{project_id}/settings/logo")
+async def upload_project_logo(project_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    import base64
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    is_owner = project["owner_id"] == user["id"]
+    is_member = await db.team_members.find_one({"project_id": project_id, "member_email": user["email"], "status": "accepted"})
+    if not is_owner and not is_member:
+        raise HTTPException(status_code=403, detail="Access denied")
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Logo must be smaller than 2MB.")
+    ct = file.content_type or "image/png"
+    b64 = base64.b64encode(data).decode("utf-8")
+    logo_data_url = f"data:{ct};base64,{b64}"
+    await db.projects.update_one({"id": project_id}, {"$set": {"logo_data": logo_data_url}})
+    return {"logo_data": logo_data_url}
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, user: dict = Depends(get_current_user)):
