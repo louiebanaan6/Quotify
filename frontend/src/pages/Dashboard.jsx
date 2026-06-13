@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import AppLayout, { StatusBadge, EUR } from "../components/AppLayout";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { useProject } from "../lib/ProjectContext";
 import { Plus, FileText, CheckCircle2, Clock, XCircle } from "lucide-react";
 
 export default function Dashboard() {
   const nav = useNavigate();
   const { t } = useI18n();
+  const { dataKey } = useProject();
   const [stats, setStats] = useState(null);
   const [invStats, setInvStats] = useState(null);
   const [quotes, setQuotes] = useState([]);
@@ -21,7 +23,7 @@ export default function Dashboard() {
       ]);
       setStats(s.data); setQuotes(q.data); setInvStats(i.data);
     })();
-  }, []);
+  }, [dataKey]); // re-fetch when project switches
 
   const cards = [
     { label: t("dash.total_quotes"), value: stats?.total ?? "—", icon: FileText, color: "text-gray-700" },
