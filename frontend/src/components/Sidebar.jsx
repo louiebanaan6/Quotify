@@ -542,7 +542,10 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                       </div>
                     ))}
                   </div>
-        
+                )}
+              </div>
+            </div>
+
             {/* Leave project (non-owners) */}
             {!isOwner && (
               <div className="border border-red-200 rounded-xl p-4 bg-red-50 mt-4">
@@ -563,6 +566,8 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 </button>
               </div>
             )}
+          </div>
+        )}
 
           {/* ── Danger ── */}
           {tab === "danger" && isOwner && (
