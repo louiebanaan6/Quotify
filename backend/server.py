@@ -249,6 +249,9 @@ class ProjectSettingsUpdate(BaseModel):
 class InviteMemberRequest(BaseModel):
     email: EmailStr
 
+class TransferOwnerRequest(BaseModel):
+    new_owner_id: str
+
 class LineItem(BaseModel):
     description: str
     quantity: float = 1
@@ -785,6 +788,43 @@ async def remove_member(project_id: str, member_id: str, user: dict = Depends(ge
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Member not found")
     return {"ok": True}
+
+@api_router.post("/projects/{project_id}/transfer-owner")
+async def transfer_owner(project_id: str, req: TransferOwnerRequest, user: dict = Depends(get_current_user)):
+    project = await db.projects.find_one({"id": project_id, "owner_id": user["id"]})
+    if not project:
+        raise HTTPException(status_code=403, detail="Only the current owner can transfer ownership")
+    # Verify new owner is an accepted member
+    member = await db.team_members.find_one({
+        "project_id": project_id,
+        "member_id": req.new_owner_id,
+        "status": "accepted"
+    })
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found or not yet accepted")
+    new_owner = await db.users.find_one({"id": req.new_owner_id}, {"_id": 0, "password_hash": 0})
+    if not new_owner:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Transfer: new owner becomes owner, old owner becomes member
+    await db.projects.update_one({"id": project_id}, {"$set": {"owner_id": req.new_owner_id}})
+    # Remove new owner from team_members (they are now the owner)
+    await db.team_members.delete_one({"project_id": project_id, "member_id": req.new_owner_id})
+    # Add old owner as a regular member
+    old_member_doc = {
+        "id": str(__import__("uuid").uuid4()),
+        "project_id": project_id,
+        "project_name": project["name"],
+        "inviter_id": req.new_owner_id,
+        "member_email": user["email"],
+        "member_id": user["id"],
+        "token": str(__import__("uuid").uuid4()),
+        "status": "accepted",
+        "accepted_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.team_members.insert_one(old_member_doc)
+    logger.info(f"Ownership of project {project_id} transferred from {user['email']} to {new_owner['email']}")
+    return {"ok": True, "new_owner_email": new_owner["email"]}
 
 # ---------- Clients ----------
 @api_router.get("/clients")
