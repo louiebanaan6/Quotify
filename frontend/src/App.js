@@ -18,6 +18,7 @@ import InvoiceDetail from "@/pages/InvoiceDetail";
 import Clients from "@/pages/Clients";
 import Settings from "@/pages/Settings";
 import Billing from "@/pages/Billing";
+import Profile from "@/pages/Profile";
 import TeamSettings from "@/pages/TeamSettings";
 
 function Protected({ children }) {
@@ -58,7 +59,10 @@ export default function App() {
                 <Route path="/invoices/:id" element={<Protected><InvoiceDetail /></Protected>} />
                 <Route path="/clients" element={<Protected><Clients /></Protected>} />
                 <Route path="/settings" element={<Protected><Settings /></Protected>} />
+                <Route path="/profile" element={<Protected><Profile /></Protected>} />
+                {/* /billing blijft werken als directe link maar zit ook in /profile?tab=billing */}
                 <Route path="/billing" element={<Protected><Billing /></Protected>} />
+                <Route path="/team/:projectId" element={<Protected><TeamSettings /></Protected>} />
                 <Route path="/team" element={<Protected><TeamSettings /></Protected>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
