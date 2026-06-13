@@ -545,7 +545,6 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 )}
               </div>
             </div>
-
             {/* Leave project (non-owners) */}
             {!isOwner && (
               <div className="border border-red-200 rounded-xl p-4 bg-red-50 mt-4">
