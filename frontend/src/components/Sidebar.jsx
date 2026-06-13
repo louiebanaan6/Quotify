@@ -153,10 +153,10 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     setLoadingMembers(true);
     api.get(`/projects/${project.id}/members`)
       .then((r) => {
-        // Response is now {owner_id, members:[...]}
         if (Array.isArray(r.data)) {
           setMembers(r.data);
         } else {
+          // {owner_id, members:[...]}
           setMembers(r.data.members || []);
         }
       })
@@ -414,13 +414,13 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                   <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
                 ) : (
                   <div className="space-y-1">
-                    {/* Owner row — show current user with correct badge */}
+                    {/* Current user row */}
                     <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50">
-                      <div className="w-8 h-8 rounded-full bg-[#0066FF] flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 ${isOwner ? "bg-[#0066FF]" : "bg-gray-400"}`}>
                         {(user?.name || "?")[0].toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium text-gray-900 truncate">{user?.name}</p>
+                        <p className="text-[13px] font-medium text-gray-900 truncate">{user?.name} <span className="text-gray-400 font-normal">(you)</span></p>
                         <p className="text-xs text-gray-500 truncate">{user?.email}</p>
                       </div>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${isOwner ? "text-[#0066FF] bg-blue-50 border border-blue-100" : "text-gray-500 bg-gray-100 border border-gray-200"}`}>
@@ -428,7 +428,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                       </span>
                     </div>
 
-                    {members.map((m) => (
+                    {members.filter((m) => m.member_email !== user?.email).map((m) => (
                       <div key={m.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 group">
                         <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-semibold shrink-0">
                           {(m.member_email || "?")[0].toUpperCase()}
