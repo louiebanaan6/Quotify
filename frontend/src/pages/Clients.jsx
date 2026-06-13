@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from "react";
 import AppLayout from "../components/AppLayout";
 import { api } from "../lib/api";
+import { useProject } from "../lib/ProjectContext";
 import { Plus, Edit, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 const empty = { name: "", email: "", phone: "", address: "", company: "" };
 
 export default function Clients() {
+  const { dataKey } = useProject();
   const [clients, setClients] = useState([]);
-  const [editing, setEditing] = useState(null); // {id?, ...empty}
+  const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = () => api.get("/clients").then((r) => setClients(r.data));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [dataKey]); // re-fetch when project switches
 
   const save = async (e) => {
     e.preventDefault();
