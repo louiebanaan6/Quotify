@@ -2,19 +2,21 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout, { StatusBadge, EUR } from "../components/AppLayout";
 import { api } from "../lib/api";
+import { useProject } from "../lib/ProjectContext";
 import { Plus, Search } from "lucide-react";
 
 const FILTERS = ["all", "draft", "sent", "accepted", "declined"];
 
 export default function QuotesList() {
   const nav = useNavigate();
+  const { dataKey } = useProject();
   const [quotes, setQuotes] = useState([]);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     api.get("/quotes").then((r) => setQuotes(r.data));
-  }, []);
+  }, [dataKey]); // re-fetch whenever active project changes
 
   const filtered = quotes
     .filter((q) => filter === "all" || q.status === filter)
