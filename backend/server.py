@@ -269,6 +269,8 @@ class QuoteCreate(BaseModel):
     discount_type: DiscountType = "none"
     discount_value: float = 0
     accent_color: Optional[str] = None
+    vat_enabled: bool = True
+    vat_rate: float = 0.21
 
 class QuoteUpdate(BaseModel):
     client_id: Optional[str] = None
@@ -281,6 +283,8 @@ class QuoteUpdate(BaseModel):
     discount_type: Optional[DiscountType] = None
     discount_value: Optional[float] = None
     accent_color: Optional[str] = None
+    vat_enabled: Optional[bool] = None
+    vat_rate: Optional[float] = None
 
 class ClientCreate(BaseModel):
     name: str
@@ -826,6 +830,38 @@ async def transfer_owner(project_id: str, req: TransferOwnerRequest, user: dict 
     logger.info(f"Ownership of project {project_id} transferred from {user['email']} to {new_owner['email']}")
     return {"ok": True, "new_owner_email": new_owner["email"]}
 
+@api_router.post("/projects/{project_id}/leave")
+async def leave_project(project_id: str, user: dict = Depends(get_current_user)):
+    project = await db.projects.find_one({"id": project_id})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["owner_id"] == user["id"]:
+        raise HTTPException(status_code=400, detail="You are the owner. Transfer ownership before leaving.")
+    res = await db.team_members.delete_one({"project_id": project_id, "member_email": user["email"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="You are not a member of this project")
+    # If this was the active project, clear it
+    if user.get("active_project_id") == project_id:
+        await db.users.update_one({"id": user["id"]}, {"$unset": {"active_project_id": ""}})
+    return {"ok": True}
+
+@api_router.get("/invites/pending")
+async def get_pending_invites(user: dict = Depends(get_current_user)):
+    """Return pending invites for the current user's email."""
+    invites = await db.team_members.find(
+        {"member_email": user["email"], "status": "pending"},
+        {"_id": 0}
+    ).to_list(50)
+    return invites
+
+@api_router.post("/invites/{invite_id}/decline")
+async def decline_invite(invite_id: str, user: dict = Depends(get_current_user)):
+    """Decline (and delete) a pending invite."""
+    res = await db.team_members.delete_one({"id": invite_id, "member_email": user["email"], "status": "pending"})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    return {"ok": True}
+
 # ---------- Clients ----------
 @api_router.get("/clients")
 async def list_clients(user: dict = Depends(get_current_user)):
@@ -882,7 +918,9 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
         if count >= FREE_QUOTE_LIMIT:
             raise HTTPException(status_code=402, detail=f"Free plan limited to {FREE_QUOTE_LIMIT} quotes. Upgrade to Pro for unlimited.")
     line_items = [li.model_dump() for li in data.line_items]
-    subtotal, discount_amount, vat, total = calculate_totals(line_items, data.discount_type, data.discount_value)
+    vat_enabled = data.vat_enabled if data.vat_enabled is not None else True
+    vat_rate = float(data.vat_rate) if data.vat_rate is not None else VAT_RATE
+    subtotal, discount_amount, vat, total = calculate_totals(line_items, data.discount_type, data.discount_value, vat_enabled, vat_rate)
     qnum = await next_quote_number(user["id"])
     accent = data.accent_color or user.get("accent_color") or "#0066FF"
     doc = {
@@ -891,7 +929,7 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
         "client_email": data.client_email, "project_description": data.project_description,
         "line_items": line_items, "notes": data.notes, "subtotal": subtotal,
         "discount_type": data.discount_type, "discount_value": float(data.discount_value),
-        "discount_amount": discount_amount, "vat_rate": VAT_RATE, "vat": vat, "total": total,
+        "discount_amount": discount_amount, "vat_enabled": vat_enabled, "vat_rate": vat_rate, "vat": vat, "total": total,
         "status": "draft", "invoice_id": None, "accent_color": accent,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -920,9 +958,11 @@ async def update_quote(quote_id: str, data: QuoteUpdate, user: dict = Depends(ge
         line_items = [li if isinstance(li, dict) else li.model_dump() for li in line_items]
         d_type = update.get("discount_type", current.get("discount_type", "none"))
         d_val = float(update.get("discount_value", current.get("discount_value", 0)) or 0)
-        subtotal, discount_amount, vat, total = calculate_totals(line_items, d_type, d_val)
+        vat_enabled = update.get("vat_enabled", current.get("vat_enabled", True))
+        vat_rate = float(update.get("vat_rate", current.get("vat_rate", VAT_RATE)) or VAT_RATE)
+        subtotal, discount_amount, vat, total = calculate_totals(line_items, d_type, d_val, vat_enabled, vat_rate)
         update.update({"line_items": line_items, "subtotal": subtotal, "discount_amount": discount_amount,
-                       "discount_type": d_type, "discount_value": d_val, "vat": vat, "total": total, "vat_rate": VAT_RATE})
+                       "discount_type": d_type, "discount_value": d_val, "vat": vat, "vat_enabled": vat_enabled, "vat_rate": vat_rate, "total": total})
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.quotes.update_one({"id": quote_id, "user_id": user["id"]}, {"$set": update})
     return await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
@@ -1018,7 +1058,11 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
     d_amount = doc_data.get("discount_amount", 0) or 0
     if d_type and d_type != "none" and d_amount > 0:
         totals.append([f"Discount ({'%g%%' % doc_data.get('discount_value',0) if d_type=='percentage' else 'fixed'})", f"− € {d_amount:,.2f}"])
-    totals.extend([[f"VAT ({int(VAT_RATE*100)}%)", f"€ {doc_data['vat']:,.2f}"], ["Total", f"€ {doc_data['total']:,.2f}"]])
+    vat_enabled_pdf = doc_data.get("vat_enabled", True)
+    vat_rate_pdf = float(doc_data.get("vat_rate") or VAT_RATE)
+    if vat_enabled_pdf and doc_data.get("vat", 0) > 0:
+        totals.append([f"VAT ({round(vat_rate_pdf*100, 4):g}%)", f"€ {doc_data['vat']:,.2f}"])
+    totals.append(["Total", f"€ {doc_data['total']:,.2f}"])
     last_idx = len(totals) - 1
     ttbl = Table(totals, colWidths=[50*mm, 30*mm], hAlign="RIGHT")
     ttbl.setStyle(TableStyle([
@@ -1056,12 +1100,29 @@ def build_pdf(doc_data: dict, owner: dict, kind: str = "QUOTE") -> bytes:
     buf.seek(0)
     return buf.read()
 
+async def get_pdf_owner(q: dict, user: dict) -> dict:
+    """Merge project settings over user settings for PDF generation."""
+    owner = dict(await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0}) or {})
+    pid = q.get("project_id")
+    if pid:
+        proj = await db.projects.find_one({"id": pid}, {"_id": 0})
+        if proj:
+            # Project settings override user settings for company info
+            for field in ("company_name", "vat_number", "bank_account", "email_signature",
+                          "address", "phone", "logo_data", "accent_color"):
+                if proj.get(field):
+                    owner[field] = proj[field]
+    # Quote accent_color always wins (per-quote override)
+    if q.get("accent_color"):
+        owner["accent_color"] = q["accent_color"]
+    return owner
+
 @api_router.get("/quotes/{quote_id}/pdf")
 async def quote_pdf(quote_id: str, user: dict = Depends(get_current_user)):
     q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
     if not q:
         raise HTTPException(status_code=404, detail="Quote not found")
-    owner = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    owner = await get_pdf_owner(q, user)
     return StreamingResponse(io.BytesIO(build_pdf(q, owner)), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="quote-{q["quote_number"]}.pdf"'})
 
@@ -1070,7 +1131,7 @@ async def send_quote(quote_id: str, req: SendQuoteRequest, user: dict = Depends(
     q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
     if not q:
         raise HTTPException(status_code=404, detail="Quote not found")
-    owner = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    owner = await get_pdf_owner(q, user)
     import base64
     encoded = base64.b64encode(build_pdf(q, owner)).decode("utf-8")
     subject = req.subject or f"Quote #{q['quote_number']} from {owner.get('company_name') or owner.get('name')}"
