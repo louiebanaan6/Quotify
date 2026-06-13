@@ -567,7 +567,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
               </div>
             )}
           </div>
-        )}
+          )}
 
           {/* ── Danger ── */}
           {tab === "danger" && isOwner && (
