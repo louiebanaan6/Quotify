@@ -276,6 +276,7 @@ class ClientCreate(BaseModel):
     company: Optional[str] = ""
 
 class SettingsUpdate(BaseModel):
+    name: Optional[str] = None
     company_name: Optional[str] = None
     vat_number: Optional[str] = None
     bank_account: Optional[str] = None
@@ -284,6 +285,12 @@ class SettingsUpdate(BaseModel):
     phone: Optional[str] = None
     language: Optional[str] = None
     accent_color: Optional[str] = None
+
+class ChangeEmailRequest(BaseModel):
+    new_email: EmailStr
+
+class ChangeEmailVerifyRequest(BaseModel):
+    otp: str
 
 class SendQuoteRequest(BaseModel):
     subject: Optional[str] = None
@@ -323,19 +330,6 @@ async def next_invoice_number(user_id: str) -> str:
     year = datetime.now(timezone.utc).year
     count = await db.invoices.count_documents({"user_id": user_id, "invoice_number": {"$regex": f"^INV-{year}-"}})
     return f"INV-{year}-{(count + 1):03d}"
-
-async def get_active_project(user: dict) -> Optional[dict]:
-    """Returns the active project dict, or None if no project is active."""
-    pid = user.get("active_project_id")
-    if not pid:
-        return None
-    return await db.projects.find_one({"id": pid}, {"_id": 0})
-
-async def get_project_owner(project: Optional[dict]) -> Optional[dict]:
-    """Returns the owner user of a project (for plan checks)."""
-    if not project:
-        return None
-    return await db.users.find_one({"id": project["owner_id"]}, {"_id": 0, "password_hash": 0})
 
 def apply_lifetime_pro_if_needed(user_doc: dict) -> dict:
     if (user_doc.get("email") or "").lower() in LIFETIME_PRO_EMAILS:
@@ -494,6 +488,89 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(get_cur
     logo_data_url = f"data:{ct};base64,{b64}"
     await db.users.update_one({"id": user["id"]}, {"$set": {"logo_data": logo_data_url, "logo_path": "db"}})
     return {"logo_path": "db", "logo_data": logo_data_url}
+
+@api_router.post("/settings/profile-photo")
+async def upload_profile_photo(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    import base64
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Photo must be smaller than 5MB.")
+    ct = file.content_type or "image/jpeg"
+    if not ct.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+    b64 = base64.b64encode(data).decode("utf-8")
+    data_url = f"data:{ct};base64,{b64}"
+    await db.users.update_one({"id": user["id"]}, {"$set": {"profile_photo": data_url}})
+    return {"profile_photo": data_url}
+
+# ---------- Change email ----------
+@api_router.post("/auth/change-email/request")
+async def change_email_request(req: ChangeEmailRequest, user: dict = Depends(get_current_user)):
+    new_email = str(req.new_email).lower().strip()
+    if new_email == user["email"].lower():
+        raise HTTPException(status_code=400, detail="That is already your current email address.")
+    existing = await db.users.find_one({"email": new_email})
+    if existing:
+        raise HTTPException(status_code=400, detail="This email address is already in use.")
+    otp = generate_otp()
+    # Store pending new email alongside OTP
+    await db.otps.delete_many({"email": user["email"], "purpose": "change_email"})
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRE_MINUTES)).isoformat()
+    await db.otps.insert_one({
+        "email": user["email"],
+        "otp": otp,
+        "purpose": "change_email",
+        "pending_email": new_email,
+        "expires_at": expires_at,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    # Send to CURRENT email
+    subject = f"Confirm your Quotify email change: {otp}"
+    html = f"""
+    <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px;">
+      <div style="margin-bottom:32px;"><span style="font-size:22px;font-weight:800;color:#111;">QUOTIFY</span></div>
+      <h2 style="font-size:24px;font-weight:700;color:#111;margin-bottom:8px;">Confirm email change</h2>
+      <p style="color:#666;margin-bottom:28px;">Hi {user.get('name', '')}, use the code below to confirm changing your email to <b>{new_email}</b>.</p>
+      <div style="background:#f8f9fa;border-radius:12px;padding:32px;text-align:center;margin-bottom:28px;">
+        <span style="font-size:48px;font-weight:900;letter-spacing:12px;color:#111;">{otp}</span>
+      </div>
+      <p style="color:#888;font-size:14px;">This code expires in <strong>{OTP_EXPIRE_MINUTES} minutes</strong>. If you didn't request this, ignore this email.</p>
+      <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0;" />
+      <p style="color:#aaa;font-size:12px;">© 2025 Quotify · support@quotify.site</p>
+    </div>
+    """
+    if resend.api_key:
+        try:
+            await asyncio.to_thread(resend.Emails.send, {
+                "from": SENDER_EMAIL, "to": [user["email"]], "subject": subject, "html": html,
+            })
+        except Exception as e:
+            logger.error(f"Failed to send change-email OTP: {e}")
+    else:
+        logger.info(f"[MOCK] change-email OTP for {user['email']}: {otp} → new: {new_email}")
+    return {"ok": True, "message": "Confirmation code sent to your current email."}
+
+@api_router.post("/auth/change-email/verify")
+async def change_email_verify(req: ChangeEmailVerifyRequest, user: dict = Depends(get_current_user)):
+    record = await db.otps.find_one({"email": user["email"], "purpose": "change_email"})
+    if not record:
+        raise HTTPException(status_code=400, detail="No pending email change. Please request a new code.")
+    expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        await db.otps.delete_many({"email": user["email"], "purpose": "change_email"})
+        raise HTTPException(status_code=400, detail="Code expired. Please request a new one.")
+    if record["otp"] != req.otp:
+        raise HTTPException(status_code=400, detail="Invalid code.")
+    new_email = record["pending_email"]
+    # Check again that email is still free
+    existing = await db.users.find_one({"email": new_email, "id": {"$ne": user["id"]}})
+    if existing:
+        raise HTTPException(status_code=400, detail="This email address is already in use.")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"email": new_email}})
+    await db.otps.delete_many({"email": user["email"], "purpose": "change_email"})
+    return {"ok": True, "message": "Email updated successfully."}
 
 @api_router.get("/files/{path:path}")
 async def serve_file(path: str, user_id: str = Query(None)):
@@ -657,18 +734,12 @@ async def remove_member(project_id: str, member_id: str, user: dict = Depends(ge
 # ---------- Clients ----------
 @api_router.get("/clients")
 async def list_clients(user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
-    q = {"user_id": user["id"]}
-    if project:
-        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
-    items = await db.clients.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    items = await db.clients.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
 @api_router.post("/clients")
 async def create_client(data: ClientCreate, user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
     doc = {"id": str(uuid.uuid4()), "user_id": user["id"], **data.model_dump(),
-           "project_id": project["id"] if project else None,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.clients.insert_one(doc)
     doc.pop("_id", None)
@@ -692,52 +763,27 @@ async def delete_client(client_id: str, user: dict = Depends(get_current_user)):
 # ---------- Quotes ----------
 @api_router.get("/quotes")
 async def list_quotes(user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
-    q = {"user_id": user["id"]}
-    if project:
-        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
-    items = await db.quotes.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    items = await db.quotes.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
 @api_router.get("/quotes/stats")
 async def quotes_stats(user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
-    base_q = {"user_id": user["id"]}
-    if project:
-        base_q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
-    total = await db.quotes.count_documents(base_q)
+    total = await db.quotes.count_documents({"user_id": user["id"]})
     by_status = {}
     for st in ["draft", "sent", "accepted", "declined"]:
-        if project:
-            st_q = {"$and": [{"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}, {"status": st}]}
-        else:
-            st_q = {"user_id": user["id"], "status": st}
-        by_status[st] = await db.quotes.count_documents(st_q)
-    if project:
-        match_stage = {"$and": [{"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}, {"status": "accepted"}]}
-    else:
-        match_stage = {"user_id": user["id"], "status": "accepted"}
-    pipeline = [{"$match": match_stage}, {"$group": {"_id": None, "sum": {"$sum": "$total"}}}]
+        by_status[st] = await db.quotes.count_documents({"user_id": user["id"], "status": st})
+    pipeline = [{"$match": {"user_id": user["id"], "status": "accepted"}},
+                {"$group": {"_id": None, "sum": {"$sum": "$total"}}}]
     accepted_value = 0
     async for row in db.quotes.aggregate(pipeline):
         accepted_value = row.get("sum", 0)
-    # Plan check: use project owner's plan
-    plan_user = await get_project_owner(project) if project else user
-    effective_plan = (plan_user or user).get("plan", "free")
     return {"total": total, "by_status": by_status, "accepted_value": round(accepted_value, 2),
-            "plan": effective_plan, "limit": FREE_QUOTE_LIMIT}
+            "plan": user.get("plan", "free"), "limit": FREE_QUOTE_LIMIT}
 
 @api_router.post("/quotes")
 async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
-    # Plan check on project owner, not necessarily the logged-in user
-    plan_user = await get_project_owner(project) if project else user
-    effective_plan = (plan_user or user).get("plan", "free")
-    if effective_plan == "free":
-        count_q = {"user_id": user["id"]}
-        if project:
-            count_q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
-        count = await db.quotes.count_documents(count_q)
+    if user.get("plan", "free") == "free":
+        count = await db.quotes.count_documents({"user_id": user["id"]})
         if count >= FREE_QUOTE_LIMIT:
             raise HTTPException(status_code=402, detail=f"Free plan limited to {FREE_QUOTE_LIMIT} quotes. Upgrade to Pro for unlimited.")
     line_items = [li.model_dump() for li in data.line_items]
@@ -746,7 +792,6 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
     accent = data.accent_color or user.get("accent_color") or "#0066FF"
     doc = {
         "id": str(uuid.uuid4()), "user_id": user["id"], "quote_number": qnum,
-        "project_id": project["id"] if project else None,
         "client_id": data.client_id, "client_name": data.client_name,
         "client_email": data.client_email, "project_description": data.project_description,
         "line_items": line_items, "notes": data.notes, "subtotal": subtotal,
@@ -965,20 +1010,12 @@ def _mark_overdue(inv: dict) -> dict:
 
 @api_router.get("/invoices")
 async def list_invoices(user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
-    q = {"user_id": user["id"]}
-    if project:
-        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
-    items = await db.invoices.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    items = await db.invoices.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return [_mark_overdue(i) for i in items]
 
 @api_router.get("/invoices/stats")
 async def invoices_stats(user: dict = Depends(get_current_user)):
-    project = await get_active_project(user)
-    q = {"user_id": user["id"]}
-    if project:
-        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
-    items = [_mark_overdue(i) for i in await db.invoices.find(q, {"_id": 0}).to_list(1000)]
+    items = [_mark_overdue(i) for i in await db.invoices.find({"user_id": user["id"]}, {"_id": 0}).to_list(1000)]
     return {
         "total": len(items),
         "total_revenue": round(sum(i["total"] for i in items if i.get("status") == "paid"), 2),
@@ -997,7 +1034,6 @@ async def convert_quote_to_invoice(quote_id: str, user: dict = Depends(get_curre
     now = datetime.now(timezone.utc)
     inv = {
         "id": str(uuid.uuid4()), "user_id": user["id"],
-        "project_id": q.get("project_id"),
         "invoice_number": await next_invoice_number(user["id"]),
         "quote_id": q["id"], "quote_number": q["quote_number"],
         "client_id": q.get("client_id"), "client_name": q["client_name"], "client_email": q["client_email"],
@@ -1150,11 +1186,8 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
     await db.quotes.create_index([("user_id", 1), ("created_at", -1)])
-    await db.quotes.create_index([("project_id", 1), ("created_at", -1)])
     await db.invoices.create_index([("user_id", 1), ("created_at", -1)])
-    await db.invoices.create_index([("project_id", 1), ("created_at", -1)])
     await db.clients.create_index([("user_id", 1), ("created_at", -1)])
-    await db.clients.create_index([("project_id", 1)])
     await db.otps.create_index("expires_at", expireAfterSeconds=0)
     await db.otps.create_index([("email", 1), ("purpose", 1)])
     await db.projects.create_index([("owner_id", 1)])
