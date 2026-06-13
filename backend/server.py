@@ -324,6 +324,19 @@ async def next_invoice_number(user_id: str) -> str:
     count = await db.invoices.count_documents({"user_id": user_id, "invoice_number": {"$regex": f"^INV-{year}-"}})
     return f"INV-{year}-{(count + 1):03d}"
 
+async def get_active_project(user: dict) -> Optional[dict]:
+    """Returns the active project dict, or None if no project is active."""
+    pid = user.get("active_project_id")
+    if not pid:
+        return None
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+async def get_project_owner(project: Optional[dict]) -> Optional[dict]:
+    """Returns the owner user of a project (for plan checks)."""
+    if not project:
+        return None
+    return await db.users.find_one({"id": project["owner_id"]}, {"_id": 0, "password_hash": 0})
+
 def apply_lifetime_pro_if_needed(user_doc: dict) -> dict:
     if (user_doc.get("email") or "").lower() in LIFETIME_PRO_EMAILS:
         user_doc["plan"] = "pro"
@@ -644,12 +657,18 @@ async def remove_member(project_id: str, member_id: str, user: dict = Depends(ge
 # ---------- Clients ----------
 @api_router.get("/clients")
 async def list_clients(user: dict = Depends(get_current_user)):
-    items = await db.clients.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    project = await get_active_project(user)
+    q = {"user_id": user["id"]}
+    if project:
+        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
+    items = await db.clients.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
 @api_router.post("/clients")
 async def create_client(data: ClientCreate, user: dict = Depends(get_current_user)):
+    project = await get_active_project(user)
     doc = {"id": str(uuid.uuid4()), "user_id": user["id"], **data.model_dump(),
+           "project_id": project["id"] if project else None,
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.clients.insert_one(doc)
     doc.pop("_id", None)
@@ -673,27 +692,52 @@ async def delete_client(client_id: str, user: dict = Depends(get_current_user)):
 # ---------- Quotes ----------
 @api_router.get("/quotes")
 async def list_quotes(user: dict = Depends(get_current_user)):
-    items = await db.quotes.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    project = await get_active_project(user)
+    q = {"user_id": user["id"]}
+    if project:
+        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
+    items = await db.quotes.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
 @api_router.get("/quotes/stats")
 async def quotes_stats(user: dict = Depends(get_current_user)):
-    total = await db.quotes.count_documents({"user_id": user["id"]})
+    project = await get_active_project(user)
+    base_q = {"user_id": user["id"]}
+    if project:
+        base_q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
+    total = await db.quotes.count_documents(base_q)
     by_status = {}
     for st in ["draft", "sent", "accepted", "declined"]:
-        by_status[st] = await db.quotes.count_documents({"user_id": user["id"], "status": st})
-    pipeline = [{"$match": {"user_id": user["id"], "status": "accepted"}},
-                {"$group": {"_id": None, "sum": {"$sum": "$total"}}}]
+        if project:
+            st_q = {"$and": [{"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}, {"status": st}]}
+        else:
+            st_q = {"user_id": user["id"], "status": st}
+        by_status[st] = await db.quotes.count_documents(st_q)
+    if project:
+        match_stage = {"$and": [{"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}, {"status": "accepted"}]}
+    else:
+        match_stage = {"user_id": user["id"], "status": "accepted"}
+    pipeline = [{"$match": match_stage}, {"$group": {"_id": None, "sum": {"$sum": "$total"}}}]
     accepted_value = 0
     async for row in db.quotes.aggregate(pipeline):
         accepted_value = row.get("sum", 0)
+    # Plan check: use project owner's plan
+    plan_user = await get_project_owner(project) if project else user
+    effective_plan = (plan_user or user).get("plan", "free")
     return {"total": total, "by_status": by_status, "accepted_value": round(accepted_value, 2),
-            "plan": user.get("plan", "free"), "limit": FREE_QUOTE_LIMIT}
+            "plan": effective_plan, "limit": FREE_QUOTE_LIMIT}
 
 @api_router.post("/quotes")
 async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)):
-    if user.get("plan", "free") == "free":
-        count = await db.quotes.count_documents({"user_id": user["id"]})
+    project = await get_active_project(user)
+    # Plan check on project owner, not necessarily the logged-in user
+    plan_user = await get_project_owner(project) if project else user
+    effective_plan = (plan_user or user).get("plan", "free")
+    if effective_plan == "free":
+        count_q = {"user_id": user["id"]}
+        if project:
+            count_q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
+        count = await db.quotes.count_documents(count_q)
         if count >= FREE_QUOTE_LIMIT:
             raise HTTPException(status_code=402, detail=f"Free plan limited to {FREE_QUOTE_LIMIT} quotes. Upgrade to Pro for unlimited.")
     line_items = [li.model_dump() for li in data.line_items]
@@ -702,6 +746,7 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
     accent = data.accent_color or user.get("accent_color") or "#0066FF"
     doc = {
         "id": str(uuid.uuid4()), "user_id": user["id"], "quote_number": qnum,
+        "project_id": project["id"] if project else None,
         "client_id": data.client_id, "client_name": data.client_name,
         "client_email": data.client_email, "project_description": data.project_description,
         "line_items": line_items, "notes": data.notes, "subtotal": subtotal,
@@ -920,12 +965,20 @@ def _mark_overdue(inv: dict) -> dict:
 
 @api_router.get("/invoices")
 async def list_invoices(user: dict = Depends(get_current_user)):
-    items = await db.invoices.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    project = await get_active_project(user)
+    q = {"user_id": user["id"]}
+    if project:
+        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
+    items = await db.invoices.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return [_mark_overdue(i) for i in items]
 
 @api_router.get("/invoices/stats")
 async def invoices_stats(user: dict = Depends(get_current_user)):
-    items = [_mark_overdue(i) for i in await db.invoices.find({"user_id": user["id"]}, {"_id": 0}).to_list(1000)]
+    project = await get_active_project(user)
+    q = {"user_id": user["id"]}
+    if project:
+        q = {"$or": [{"project_id": project["id"]}, {"user_id": user["id"], "project_id": {"$exists": False}}]}
+    items = [_mark_overdue(i) for i in await db.invoices.find(q, {"_id": 0}).to_list(1000)]
     return {
         "total": len(items),
         "total_revenue": round(sum(i["total"] for i in items if i.get("status") == "paid"), 2),
@@ -944,6 +997,7 @@ async def convert_quote_to_invoice(quote_id: str, user: dict = Depends(get_curre
     now = datetime.now(timezone.utc)
     inv = {
         "id": str(uuid.uuid4()), "user_id": user["id"],
+        "project_id": q.get("project_id"),
         "invoice_number": await next_invoice_number(user["id"]),
         "quote_id": q["id"], "quote_number": q["quote_number"],
         "client_id": q.get("client_id"), "client_name": q["client_name"], "client_email": q["client_email"],
@@ -1096,8 +1150,11 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
     await db.quotes.create_index([("user_id", 1), ("created_at", -1)])
+    await db.quotes.create_index([("project_id", 1), ("created_at", -1)])
     await db.invoices.create_index([("user_id", 1), ("created_at", -1)])
+    await db.invoices.create_index([("project_id", 1), ("created_at", -1)])
     await db.clients.create_index([("user_id", 1), ("created_at", -1)])
+    await db.clients.create_index([("project_id", 1)])
     await db.otps.create_index("expires_at", expireAfterSeconds=0)
     await db.otps.create_index([("email", 1), ("purpose", 1)])
     await db.projects.create_index([("owner_id", 1)])
