@@ -815,7 +815,9 @@ async def accept_invite(token: str, response: Response):
     await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": invite["project_id"]}})
     token_jwt = create_access_token(user["id"], user["email"])
     set_auth_cookie(response, token_jwt)
-    return {"ok": True, "project_id": invite["project_id"], "project_name": invite["project_name"]}
+    # Re-fetch user with updated active_project_id
+    updated_user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return {"ok": True, "project_id": invite["project_id"], "project_name": invite["project_name"], "user": updated_user}
 
 @api_router.delete("/projects/{project_id}/members/{member_id}")
 async def remove_member(project_id: str, member_id: str, user: dict = Depends(get_current_user)):
@@ -989,8 +991,10 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
     subtotal, discount_amount, vat, total = calculate_totals(line_items, data.discount_type, data.discount_value, vat_enabled, vat_rate)
     qnum = await next_quote_number(user["id"])
     accent = data.accent_color or user.get("accent_color") or "#0066FF"
+    active_project = await get_active_project(user)
     doc = {
         "id": str(uuid.uuid4()), "user_id": user["id"], "quote_number": qnum,
+        "project_id": active_project["id"] if active_project else None,
         "client_id": data.client_id, "client_name": data.client_name,
         "client_email": data.client_email, "project_description": data.project_description,
         "line_items": line_items, "notes": data.notes, "subtotal": subtotal,
