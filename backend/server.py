@@ -349,6 +349,35 @@ async def next_invoice_number(user_id: str) -> str:
     count = await db.invoices.count_documents({"user_id": user_id, "invoice_number": {"$regex": f"^INV-{year}-"}})
     return f"INV-{year}-{(count + 1):03d}"
 
+async def get_active_project(user: dict) -> Optional[dict]:
+    """Return the active project for the user, or None."""
+    pid = user.get("active_project_id")
+    if not pid:
+        return None
+    proj = await db.projects.find_one({"id": pid}, {"_id": 0})
+    return proj
+
+async def get_project_owner(project: Optional[dict]) -> Optional[dict]:
+    """Return the owner user of a project (for plan checks)."""
+    if not project:
+        return None
+    return await db.users.find_one({"id": project["owner_id"]}, {"_id": 0, "password_hash": 0})
+
+async def get_pdf_owner_data(q: dict, user: dict) -> dict:
+    """Merge project settings over user settings for PDF generation."""
+    owner = dict(await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0}) or {})
+    pid = q.get("project_id")
+    if pid:
+        proj = await db.projects.find_one({"id": pid}, {"_id": 0})
+        if proj:
+            for field in ("company_name", "vat_number", "bank_account", "email_signature",
+                          "address", "phone", "logo_data", "accent_color"):
+                if proj.get(field):
+                    owner[field] = proj[field]
+    if q.get("accent_color"):
+        owner["accent_color"] = q["accent_color"]
+    return owner
+
 def apply_lifetime_pro_if_needed(user_doc: dict) -> dict:
     if (user_doc.get("email") or "").lower() in LIFETIME_PRO_EMAILS:
         user_doc["plan"] = "pro"
@@ -1159,7 +1188,7 @@ async def quote_pdf(quote_id: str, user: dict = Depends(get_current_user)):
     q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
     if not q:
         raise HTTPException(status_code=404, detail="Quote not found")
-    owner = await get_pdf_owner(q, user)
+    owner = await get_pdf_owner_data(q, user)
     return StreamingResponse(io.BytesIO(build_pdf(q, owner)), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="quote-{q["quote_number"]}.pdf"'})
 
@@ -1168,7 +1197,7 @@ async def send_quote(quote_id: str, req: SendQuoteRequest, user: dict = Depends(
     q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
     if not q:
         raise HTTPException(status_code=404, detail="Quote not found")
-    owner = await get_pdf_owner(q, user)
+    owner = await get_pdf_owner_data(q, user)
     import base64
     encoded = base64.b64encode(build_pdf(q, owner)).decode("utf-8")
     subject = req.subject or f"Quote #{q['quote_number']} from {owner.get('company_name') or owner.get('name')}"
