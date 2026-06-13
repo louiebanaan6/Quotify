@@ -6,7 +6,7 @@ import { useAuth } from "./auth";
 const ProjectContext = createContext(null);
 
 export function ProjectProvider({ children }) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -20,6 +20,7 @@ export function ProjectProvider({ children }) {
       const { data } = await api.get("/projects");
       const all = [...(data.owned || []), ...(data.member || [])];
       setProjects(all);
+      // Active project = user's active_project_id, else first project
       const active = all.find((p) => p.id === user.active_project_id) || all[0] || null;
       setActiveProject(active);
     } catch (e) {
@@ -46,6 +47,8 @@ export function ProjectProvider({ children }) {
 
   const switchProject = async (projectId) => {
     await api.post(`/projects/${projectId}/activate`);
+    // Refresh user so active_project_id is updated in auth context
+    await refresh();
     const found = projects.find((p) => p.id === projectId);
     setActiveProject(found || null);
     setDataKey((k) => k + 1);
@@ -53,6 +56,7 @@ export function ProjectProvider({ children }) {
 
   const createProject = async (name, description = "") => {
     const { data } = await api.post("/projects", { name, description });
+    await refresh();
     await loadProjects();
     setDataKey((k) => k + 1);
     return data;
@@ -60,18 +64,22 @@ export function ProjectProvider({ children }) {
 
   const deleteProject = async (projectId) => {
     await api.delete(`/projects/${projectId}`);
+    await refresh();
     await loadProjects();
     setDataKey((k) => k + 1);
   };
 
   const leaveProject = async (projectId) => {
     await api.post(`/projects/${projectId}/leave`);
+    await refresh();
     await loadProjects();
     setDataKey((k) => k + 1);
   };
 
   const acceptInvite = async (token) => {
-    await api.post(`/invite/accept?token=${token}`);
+    const { data } = await api.post(`/invite/accept?token=${token}`);
+    // Backend returns updated user with new active_project_id — refresh auth
+    await refresh();
     await loadProjects();
     await loadPendingInvites();
     setDataKey((k) => k + 1);
