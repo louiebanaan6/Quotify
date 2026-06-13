@@ -708,11 +708,16 @@ async def activate_project(project_id: str, user: dict = Depends(get_current_use
 # ---------- Team Members ----------
 @api_router.get("/projects/{project_id}/members")
 async def list_members(project_id: str, user: dict = Depends(get_current_user)):
-    project = await db.projects.find_one({"id": project_id, "owner_id": user["id"]})
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project:
-        raise HTTPException(status_code=403, detail="Only the owner can manage members")
+        raise HTTPException(status_code=404, detail="Project not found")
+    is_owner = project["owner_id"] == user["id"]
+    is_member = await db.team_members.find_one({"project_id": project_id, "member_email": user["email"], "status": "accepted"})
+    if not is_owner and not is_member:
+        raise HTTPException(status_code=403, detail="Access denied")
     members = await db.team_members.find({"project_id": project_id}, {"_id": 0}).to_list(100)
-    return members
+    # Attach owner info so frontend can distinguish
+    return {"owner_id": project["owner_id"], "members": members}
 
 @api_router.post("/projects/{project_id}/invite")
 async def invite_member(project_id: str, req: InviteMemberRequest, user: dict = Depends(get_current_user)):
@@ -865,12 +870,25 @@ async def decline_invite(invite_id: str, user: dict = Depends(get_current_user))
 # ---------- Clients ----------
 @api_router.get("/clients")
 async def list_clients(user: dict = Depends(get_current_user)):
-    items = await db.clients.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    project = await get_active_project(user)
+    if project:
+        # Show clients that belong to this project OR were created by this user without a project
+        q = {"$or": [
+            {"project_id": project["id"]},
+            {"user_id": user["id"], "project_id": {"$exists": False}},
+            {"user_id": user["id"], "project_id": None},
+        ]}
+    else:
+        q = {"user_id": user["id"]}
+    items = await db.clients.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
 @api_router.post("/clients")
 async def create_client(data: ClientCreate, user: dict = Depends(get_current_user)):
-    doc = {"id": str(uuid.uuid4()), "user_id": user["id"], **data.model_dump(),
+    project = await get_active_project(user)
+    doc = {"id": str(uuid.uuid4()), "user_id": user["id"],
+           "project_id": project["id"] if project else None,
+           **data.model_dump(),
            "created_at": datetime.now(timezone.utc).isoformat()}
     await db.clients.insert_one(doc)
     doc.pop("_id", None)
@@ -894,15 +912,34 @@ async def delete_client(client_id: str, user: dict = Depends(get_current_user)):
 # ---------- Quotes ----------
 @api_router.get("/quotes")
 async def list_quotes(user: dict = Depends(get_current_user)):
-    items = await db.quotes.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    project = await get_active_project(user)
+    if project:
+        q = {"$or": [
+            {"project_id": project["id"]},
+            {"user_id": user["id"], "project_id": {"$exists": False}},
+            {"user_id": user["id"], "project_id": None},
+        ]}
+    else:
+        q = {"user_id": user["id"]}
+    items = await db.quotes.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
 @api_router.get("/quotes/stats")
 async def quotes_stats(user: dict = Depends(get_current_user)):
-    total = await db.quotes.count_documents({"user_id": user["id"]})
+    project = await get_active_project(user)
+    if project:
+        base_q = {"$or": [
+            {"project_id": project["id"]},
+            {"user_id": user["id"], "project_id": {"$exists": False}},
+            {"user_id": user["id"], "project_id": None},
+        ]}
+    else:
+        base_q = {"user_id": user["id"]}
+    total = await db.quotes.count_documents(base_q)
     by_status = {}
     for st in ["draft", "sent", "accepted", "declined"]:
-        by_status[st] = await db.quotes.count_documents({"user_id": user["id"], "status": st})
+        st_q = {"$and": [base_q, {"status": st}]} if project else {**base_q, "status": st}
+        by_status[st] = await db.quotes.count_documents(st_q)
     pipeline = [{"$match": {"user_id": user["id"], "status": "accepted"}},
                 {"$group": {"_id": None, "sum": {"$sum": "$total"}}}]
     accepted_value = 0
@@ -1166,12 +1203,30 @@ def _mark_overdue(inv: dict) -> dict:
 
 @api_router.get("/invoices")
 async def list_invoices(user: dict = Depends(get_current_user)):
-    items = await db.invoices.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    project = await get_active_project(user)
+    if project:
+        q = {"$or": [
+            {"project_id": project["id"]},
+            {"user_id": user["id"], "project_id": {"$exists": False}},
+            {"user_id": user["id"], "project_id": None},
+        ]}
+    else:
+        q = {"user_id": user["id"]}
+    items = await db.invoices.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return [_mark_overdue(i) for i in items]
 
 @api_router.get("/invoices/stats")
 async def invoices_stats(user: dict = Depends(get_current_user)):
-    items = [_mark_overdue(i) for i in await db.invoices.find({"user_id": user["id"]}, {"_id": 0}).to_list(1000)]
+    project = await get_active_project(user)
+    if project:
+        q = {"$or": [
+            {"project_id": project["id"]},
+            {"user_id": user["id"], "project_id": {"$exists": False}},
+            {"user_id": user["id"], "project_id": None},
+        ]}
+    else:
+        q = {"user_id": user["id"]}
+    items = [_mark_overdue(i) for i in await db.invoices.find(q, {"_id": 0}).to_list(1000)]
     return {
         "total": len(items),
         "total_revenue": round(sum(i["total"] for i in items if i.get("status") == "paid"), 2),
