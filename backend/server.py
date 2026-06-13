@@ -324,7 +324,10 @@ class CheckoutRequest(BaseModel):
     origin_url: str
 
 # ---------- Quote calculations ----------
-def calculate_totals(line_items: List[dict], discount_type: str = "none", discount_value: float = 0):
+def calculate_totals(line_items: List[dict], discount_type: str = "none", discount_value: float = 0,
+                     vat_enabled: bool = True, vat_rate: float = None):
+    if vat_rate is None:
+        vat_rate = VAT_RATE
     subtotal = sum((li.get("quantity", 0) or 0) * (li.get("unit_price", 0) or 0) for li in line_items)
     subtotal = round(subtotal, 2)
     if discount_type == "percentage":
@@ -335,7 +338,7 @@ def calculate_totals(line_items: List[dict], discount_type: str = "none", discou
         discount_amount = 0.0
     discount_amount = max(0.0, min(discount_amount, subtotal))
     taxable = round(subtotal - discount_amount, 2)
-    vat = round(taxable * VAT_RATE, 2)
+    vat = round(taxable * float(vat_rate), 2) if vat_enabled else 0.0
     total = round(taxable + vat, 2)
     return subtotal, discount_amount, vat, total
 
