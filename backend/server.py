@@ -360,6 +360,25 @@ async def get_active_project(user: dict) -> Optional[dict]:
     proj = await db.projects.find_one({"id": pid}, {"_id": 0})
     return proj
 
+async def can_access_quote(quote: dict, user: dict) -> bool:
+    """True if user created the quote OR is owner/member of its project."""
+    if quote.get("user_id") == user["id"]:
+        return True
+    pid = quote.get("project_id")
+    if not pid:
+        return False
+    project = await db.projects.find_one({"id": pid}, {"_id": 0})
+    if not project:
+        return False
+    if project["owner_id"] == user["id"]:
+        return True
+    member = await db.team_members.find_one({
+        "project_id": pid,
+        "member_email": user["email"],
+        "status": "accepted"
+    })
+    return bool(member)
+
 async def get_project_owner(project: Optional[dict]) -> Optional[dict]:
     """Return the owner user of a project (for plan checks)."""
     if not project:
@@ -1036,20 +1055,20 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
 
 @api_router.get("/quotes/{quote_id}")
 async def get_quote(quote_id: str, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     return q
 
 @api_router.put("/quotes/{quote_id}")
 async def update_quote(quote_id: str, data: QuoteUpdate, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     update = {k: v for k, v in data.model_dump().items() if v is not None}
     needs_recalc = any(k in update for k in ("line_items", "discount_type", "discount_value"))
     if needs_recalc:
-        current = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
+        current = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
         line_items = update.get("line_items", current.get("line_items", []))
         line_items = [li if isinstance(li, dict) else li.model_dump() for li in line_items]
         d_type = update.get("discount_type", current.get("discount_type", "none"))
@@ -1060,14 +1079,15 @@ async def update_quote(quote_id: str, data: QuoteUpdate, user: dict = Depends(ge
         update.update({"line_items": line_items, "subtotal": subtotal, "discount_amount": discount_amount,
                        "discount_type": d_type, "discount_value": d_val, "vat": vat, "vat_enabled": vat_enabled, "vat_rate": vat_rate, "total": total})
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await db.quotes.update_one({"id": quote_id, "user_id": user["id"]}, {"$set": update})
-    return await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
+    await db.quotes.update_one({"id": quote_id}, {"$set": update})
+    return await db.quotes.find_one({"id": quote_id}, {"_id": 0})
 
 @api_router.delete("/quotes/{quote_id}")
 async def delete_quote(quote_id: str, user: dict = Depends(get_current_user)):
-    res = await db.quotes.delete_one({"id": quote_id, "user_id": user["id"]})
-    if res.deleted_count == 0:
+    q = await db.quotes.find_one({"id": quote_id})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
+    await db.quotes.delete_one({"id": quote_id})
     return {"ok": True}
 
 # ---------- PDF ----------
@@ -1215,8 +1235,8 @@ async def get_pdf_owner(q: dict, user: dict) -> dict:
 
 @api_router.get("/quotes/{quote_id}/pdf")
 async def quote_pdf(quote_id: str, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     owner = await get_pdf_owner_data(q, user)
     return StreamingResponse(io.BytesIO(build_pdf(q, owner)), media_type="application/pdf",
@@ -1224,8 +1244,8 @@ async def quote_pdf(quote_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.post("/quotes/{quote_id}/send")
 async def send_quote(quote_id: str, req: SendQuoteRequest, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     owner = await get_pdf_owner_data(q, user)
     import base64
@@ -1835,6 +1855,25 @@ async def get_active_project(user: dict) -> Optional[dict]:
     proj = await db.projects.find_one({"id": pid}, {"_id": 0})
     return proj
 
+async def can_access_quote(quote: dict, user: dict) -> bool:
+    """True if user created the quote OR is owner/member of its project."""
+    if quote.get("user_id") == user["id"]:
+        return True
+    pid = quote.get("project_id")
+    if not pid:
+        return False
+    project = await db.projects.find_one({"id": pid}, {"_id": 0})
+    if not project:
+        return False
+    if project["owner_id"] == user["id"]:
+        return True
+    member = await db.team_members.find_one({
+        "project_id": pid,
+        "member_email": user["email"],
+        "status": "accepted"
+    })
+    return bool(member)
+
 async def get_project_owner(project: Optional[dict]) -> Optional[dict]:
     """Return the owner user of a project (for plan checks)."""
     if not project:
@@ -2511,20 +2550,20 @@ async def create_quote(data: QuoteCreate, user: dict = Depends(get_current_user)
 
 @api_router.get("/quotes/{quote_id}")
 async def get_quote(quote_id: str, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     return q
 
 @api_router.put("/quotes/{quote_id}")
 async def update_quote(quote_id: str, data: QuoteUpdate, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     update = {k: v for k, v in data.model_dump().items() if v is not None}
     needs_recalc = any(k in update for k in ("line_items", "discount_type", "discount_value"))
     if needs_recalc:
-        current = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
+        current = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
         line_items = update.get("line_items", current.get("line_items", []))
         line_items = [li if isinstance(li, dict) else li.model_dump() for li in line_items]
         d_type = update.get("discount_type", current.get("discount_type", "none"))
@@ -2535,14 +2574,15 @@ async def update_quote(quote_id: str, data: QuoteUpdate, user: dict = Depends(ge
         update.update({"line_items": line_items, "subtotal": subtotal, "discount_amount": discount_amount,
                        "discount_type": d_type, "discount_value": d_val, "vat": vat, "vat_enabled": vat_enabled, "vat_rate": vat_rate, "total": total})
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await db.quotes.update_one({"id": quote_id, "user_id": user["id"]}, {"$set": update})
-    return await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
+    await db.quotes.update_one({"id": quote_id}, {"$set": update})
+    return await db.quotes.find_one({"id": quote_id}, {"_id": 0})
 
 @api_router.delete("/quotes/{quote_id}")
 async def delete_quote(quote_id: str, user: dict = Depends(get_current_user)):
-    res = await db.quotes.delete_one({"id": quote_id, "user_id": user["id"]})
-    if res.deleted_count == 0:
+    q = await db.quotes.find_one({"id": quote_id})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
+    await db.quotes.delete_one({"id": quote_id})
     return {"ok": True}
 
 # ---------- PDF ----------
@@ -2690,8 +2730,8 @@ async def get_pdf_owner(q: dict, user: dict) -> dict:
 
 @api_router.get("/quotes/{quote_id}/pdf")
 async def quote_pdf(quote_id: str, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     owner = await get_pdf_owner_data(q, user)
     return StreamingResponse(io.BytesIO(build_pdf(q, owner)), media_type="application/pdf",
@@ -2699,8 +2739,8 @@ async def quote_pdf(quote_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.post("/quotes/{quote_id}/send")
 async def send_quote(quote_id: str, req: SendQuoteRequest, user: dict = Depends(get_current_user)):
-    q = await db.quotes.find_one({"id": quote_id, "user_id": user["id"]}, {"_id": 0})
-    if not q:
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q or not await can_access_quote(q, user):
         raise HTTPException(status_code=404, detail="Quote not found")
     owner = await get_pdf_owner_data(q, user)
     import base64
