@@ -526,6 +526,7 @@ export default function Sidebar() {
   const [createErr, setCreateErr] = useState("");
   const [settingsProject, setSettingsProject] = useState(null);
   const [settingsProjectData, setSettingsProjectData] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const projectRef = useRef(null);
   const accountRef = useRef(null);
