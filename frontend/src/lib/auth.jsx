@@ -24,16 +24,34 @@ export function AuthProvider({ children }) {
       syncLang(data);
       return data;
     } catch (e) {
-      setUser(null);
+      // Only log out if it's a real 401, not a network error
+      if (e.response?.status === 401) {
+        clearToken();
+        setUser(null);
+      } else {
+        // Network error — keep user logged in, try again later
+        console.warn("Auth refresh failed (network?), keeping session");
+        // If we have no user yet, set to null so app doesn't hang
+        setUser((prev) => prev === undefined ? null : prev);
+      }
       return null;
     }
   };
 
-  useEffect(() => { refresh(); }, []);
+  // On mount: check if token exists in localStorage before hitting /auth/me
+  useEffect(() => {
+    const token = localStorage.getItem("quotify_token");
+    if (!token) {
+      // No token at all — definitely logged out
+      setUser(null);
+      return;
+    }
+    // Token exists — verify it with backend
+    refresh();
+  }, []);
 
   const login = async (email, otp) => {
     const res = await api.post("/auth/verify-otp", { email, otp });
-    // Save token to localStorage so Bearer header works cross-origin
     saveToken(res.data.token);
     setUser(res.data.user);
     syncLang(res.data.user);
