@@ -451,6 +451,21 @@ async def verify_login_otp(req: VerifyOTPRequest, response: Response):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user = apply_lifetime_pro_if_needed(user)
+    # Create a default personal project if the user has none
+    existing_project = await db.projects.find_one({"owner_id": user["id"]})
+    if not existing_project:
+        default_name = (user.get("name") or "My").split()[0] + "'s project"
+        project_id = str(uuid.uuid4())
+        project_doc = {
+            "id": project_id,
+            "name": default_name,
+            "description": "",
+            "owner_id": user["id"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.projects.insert_one(project_doc)
+        await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": project_id}})
+        user["active_project_id"] = project_id
     token = create_access_token(user["id"], email)
     set_auth_cookie(response, token)
     return {"user": user, "token": token}
@@ -1946,6 +1961,21 @@ async def verify_login_otp(req: VerifyOTPRequest, response: Response):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user = apply_lifetime_pro_if_needed(user)
+    # Create a default personal project if the user has none
+    existing_project = await db.projects.find_one({"owner_id": user["id"]})
+    if not existing_project:
+        default_name = (user.get("name") or "My").split()[0] + "'s project"
+        project_id = str(uuid.uuid4())
+        project_doc = {
+            "id": project_id,
+            "name": default_name,
+            "description": "",
+            "owner_id": user["id"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.projects.insert_one(project_doc)
+        await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": project_id}})
+        user["active_project_id"] = project_id
     token = create_access_token(user["id"], email)
     set_auth_cookie(response, token)
     return {"user": user, "token": token}
