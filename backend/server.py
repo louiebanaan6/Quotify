@@ -451,21 +451,32 @@ async def verify_login_otp(req: VerifyOTPRequest, response: Response):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user = apply_lifetime_pro_if_needed(user)
-    # Create a default personal project if the user has none
-    existing_project = await db.projects.find_one({"owner_id": user["id"]})
-    if not existing_project:
-        default_name = (user.get("name") or "My").split()[0] + "'s project"
-        project_id = str(uuid.uuid4())
-        project_doc = {
-            "id": project_id,
-            "name": default_name,
-            "description": "",
-            "owner_id": user["id"],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.projects.insert_one(project_doc)
-        await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": project_id}})
-        user["active_project_id"] = project_id
+    # Create a default personal project only if the user has NEVER had any project
+    # (check both owned and member projects to avoid recreating after deletion)
+    existing_owned = await db.projects.count_documents({"owner_id": user["id"]})
+    if existing_owned == 0:
+        # Also check if user has an active_project_id pointing to a member project
+        active_pid = user.get("active_project_id")
+        has_active = active_pid and await db.projects.find_one({"id": active_pid})
+        if not has_active:
+            default_name = (user.get("name") or "My").split()[0] + "'s project"
+            new_project_id = str(uuid.uuid4())
+            project_doc = {
+                "id": new_project_id,
+                "name": default_name,
+                "description": "",
+                "owner_id": user["id"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.projects.insert_one(project_doc)
+            await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": new_project_id}})
+            user["active_project_id"] = new_project_id
+    elif not user.get("active_project_id"):
+        # Has projects but no active set — pick first owned
+        first = await db.projects.find_one({"owner_id": user["id"]}, {"_id": 0})
+        if first:
+            await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": first["id"]}})
+            user["active_project_id"] = first["id"]
     token = create_access_token(user["id"], email)
     set_auth_cookie(response, token)
     return {"user": user, "token": token}
@@ -761,9 +772,23 @@ async def delete_project(project_id: str, user: dict = Depends(get_current_user)
     project = await db.projects.find_one({"id": project_id, "owner_id": user["id"]})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    # Block deletion if this is the user's only owned project
+    owned_count = await db.projects.count_documents({"owner_id": user["id"]})
+    if owned_count <= 1:
+        raise HTTPException(status_code=400, detail="You cannot delete your last project.")
     await db.projects.delete_one({"id": project_id})
+    await db.quotes.delete_many({"project_id": project_id})
+    await db.invoices.delete_many({"project_id": project_id})
+    await db.clients.delete_many({"project_id": project_id})
+    await db.team_members.delete_many({"project_id": project_id})
     if user.get("active_project_id") == project_id:
-        await db.users.update_one({"id": user["id"]}, {"$unset": {"active_project_id": ""}})
+        # Switch to another owned project
+        other = await db.projects.find_one({"owner_id": user["id"]}, {"_id": 0})
+        new_active = other["id"] if other else None
+        if new_active:
+            await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": new_active}})
+        else:
+            await db.users.update_one({"id": user["id"]}, {"$unset": {"active_project_id": ""}})
     return {"ok": True}
 
 @api_router.post("/projects/{project_id}/activate")
@@ -1961,21 +1986,32 @@ async def verify_login_otp(req: VerifyOTPRequest, response: Response):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user = apply_lifetime_pro_if_needed(user)
-    # Create a default personal project if the user has none
-    existing_project = await db.projects.find_one({"owner_id": user["id"]})
-    if not existing_project:
-        default_name = (user.get("name") or "My").split()[0] + "'s project"
-        project_id = str(uuid.uuid4())
-        project_doc = {
-            "id": project_id,
-            "name": default_name,
-            "description": "",
-            "owner_id": user["id"],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.projects.insert_one(project_doc)
-        await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": project_id}})
-        user["active_project_id"] = project_id
+    # Create a default personal project only if the user has NEVER had any project
+    # (check both owned and member projects to avoid recreating after deletion)
+    existing_owned = await db.projects.count_documents({"owner_id": user["id"]})
+    if existing_owned == 0:
+        # Also check if user has an active_project_id pointing to a member project
+        active_pid = user.get("active_project_id")
+        has_active = active_pid and await db.projects.find_one({"id": active_pid})
+        if not has_active:
+            default_name = (user.get("name") or "My").split()[0] + "'s project"
+            new_project_id = str(uuid.uuid4())
+            project_doc = {
+                "id": new_project_id,
+                "name": default_name,
+                "description": "",
+                "owner_id": user["id"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.projects.insert_one(project_doc)
+            await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": new_project_id}})
+            user["active_project_id"] = new_project_id
+    elif not user.get("active_project_id"):
+        # Has projects but no active set — pick first owned
+        first = await db.projects.find_one({"owner_id": user["id"]}, {"_id": 0})
+        if first:
+            await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": first["id"]}})
+            user["active_project_id"] = first["id"]
     token = create_access_token(user["id"], email)
     set_auth_cookie(response, token)
     return {"user": user, "token": token}
@@ -2271,9 +2307,23 @@ async def delete_project(project_id: str, user: dict = Depends(get_current_user)
     project = await db.projects.find_one({"id": project_id, "owner_id": user["id"]})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    # Block deletion if this is the user's only owned project
+    owned_count = await db.projects.count_documents({"owner_id": user["id"]})
+    if owned_count <= 1:
+        raise HTTPException(status_code=400, detail="You cannot delete your last project.")
     await db.projects.delete_one({"id": project_id})
+    await db.quotes.delete_many({"project_id": project_id})
+    await db.invoices.delete_many({"project_id": project_id})
+    await db.clients.delete_many({"project_id": project_id})
+    await db.team_members.delete_many({"project_id": project_id})
     if user.get("active_project_id") == project_id:
-        await db.users.update_one({"id": user["id"]}, {"$unset": {"active_project_id": ""}})
+        # Switch to another owned project
+        other = await db.projects.find_one({"owner_id": user["id"]}, {"_id": 0})
+        new_active = other["id"] if other else None
+        if new_active:
+            await db.users.update_one({"id": user["id"]}, {"$set": {"active_project_id": new_active}})
+        else:
+            await db.users.update_one({"id": user["id"]}, {"$unset": {"active_project_id": ""}})
     return {"ok": True}
 
 @api_router.post("/projects/{project_id}/activate")
