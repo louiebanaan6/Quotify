@@ -214,7 +214,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
       toast.success("Invitation sent to " + inviteEmail);
       setInviteEmail("");
       const r = await api.get(`/projects/${project.id}/members`);
-      setMembers(r.data);
+      setMembers(Array.isArray(r.data) ? r.data : (r.data.members || []));
     } catch (ex) {
       toast.error(ex.response?.data?.detail || "Failed to invite");
     } finally {
