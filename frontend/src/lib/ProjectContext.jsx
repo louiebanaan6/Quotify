@@ -1,5 +1,5 @@
 // frontend/src/lib/ProjectContext.jsx
-import React, { createContext, useContext, useEffect, useState, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
 
@@ -13,24 +13,24 @@ export function ProjectProvider({ children }) {
   const [pendingInvites, setPendingInvites] = useState([]);
   const [dataKey, setDataKey] = useState(0);
 
-  // Use a ref so loadProjects always has access to the latest user
-  // without needing useCallback deps
-  const userRef = useRef(user);
-  useEffect(() => { userRef.current = user; }, [user]);
-
-  // Core loader — always fetches fresh from API, uses active_project_id
-  // from the freshest user ref (not stale closure)
-  const loadProjects = async (overrideActiveId) => {
-    if (!userRef.current) { setProjects([]); setActiveProject(null); return; }
+  // Fetch all projects from API, optionally force a specific active project id
+  const _fetchProjects = async (forceActiveId) => {
     setLoading(true);
     try {
       const { data } = await api.get("/projects");
       const all = [...(data.owned || []), ...(data.member || [])];
       setProjects(all);
-      // Use override (e.g. after accept invite) or user's active_project_id
-      const activeId = overrideActiveId ?? userRef.current?.active_project_id;
-      const active = all.find((p) => p.id === activeId) || all[0] || null;
-      setActiveProject(active);
+
+      if (forceActiveId) {
+        const found = all.find((p) => p.id === forceActiveId);
+        setActiveProject(found || all[0] || null);
+      } else {
+        // Use whatever the server says is active via user.active_project_id
+        const { data: me } = await api.get("/auth/me");
+        const activeId = me?.active_project_id;
+        const found = all.find((p) => p.id === activeId) || all[0] || null;
+        setActiveProject(found);
+      }
     } catch (e) {
       console.error("Failed to load projects", e);
     } finally {
@@ -38,8 +38,7 @@ export function ProjectProvider({ children }) {
     }
   };
 
-  const loadPendingInvites = async () => {
-    if (!userRef.current) { setPendingInvites([]); return; }
+  const _fetchPendingInvites = async () => {
     try {
       const { data } = await api.get("/invites/pending");
       setPendingInvites(data || []);
@@ -48,11 +47,11 @@ export function ProjectProvider({ children }) {
     }
   };
 
-  // Load on mount and when user id changes
+  // Reload whenever user logs in/out
   useEffect(() => {
     if (user?.id) {
-      loadProjects();
-      loadPendingInvites();
+      _fetchProjects();
+      _fetchPendingInvites();
     } else {
       setProjects([]);
       setActiveProject(null);
@@ -60,49 +59,44 @@ export function ProjectProvider({ children }) {
     }
   }, [user?.id]);
 
+  const loadProjects = () => _fetchProjects();
+  const loadPendingInvites = () => _fetchPendingInvites();
+
   const switchProject = async (projectId) => {
     await api.post(`/projects/${projectId}/activate`);
-    await refresh();
-    // Find directly in current projects list
-    setActiveProject((prev) => {
-      const found = projects.find((p) => p.id === projectId);
-      return found || prev;
-    });
+    const found = projects.find((p) => p.id === projectId);
+    setActiveProject(found || null);
     setDataKey((k) => k + 1);
   };
 
   const createProject = async (name, description = "") => {
     const { data } = await api.post("/projects", { name, description });
-    await refresh();
-    await loadProjects(data.id);
+    await _fetchProjects(data.id);
     setDataKey((k) => k + 1);
     return data;
   };
 
   const deleteProject = async (projectId) => {
     await api.delete(`/projects/${projectId}`);
-    await refresh();
-    await loadProjects();
+    await _fetchProjects();
     setDataKey((k) => k + 1);
   };
 
   const leaveProject = async (projectId) => {
     await api.post(`/projects/${projectId}/leave`);
-    await refresh();
-    await loadProjects();
+    await _fetchProjects();
     setDataKey((k) => k + 1);
   };
 
   const acceptInvite = async (token) => {
-    // Backend returns {ok, project_id, project_name}
+    // POST to backend — returns {ok, project_id, project_name}
     const { data } = await api.post(`/invite/accept?token=${token}`);
-    // Refresh user first so active_project_id is updated
-    await refresh();
-    // Pass the project_id directly so loadProjects sets the right active project
-    // even before userRef updates from the refresh
-    await loadProjects(data.project_id);
-    await loadPendingInvites();
-    setDataKey((k) => k + 1);
+    if (data.ok) {
+      // Force reload with the accepted project as active
+      await _fetchProjects(data.project_id);
+      await _fetchPendingInvites();
+      setDataKey((k) => k + 1);
+    }
   };
 
   const declineInvite = async (inviteId) => {
