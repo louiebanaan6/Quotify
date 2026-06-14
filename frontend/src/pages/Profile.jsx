@@ -297,6 +297,7 @@ function PasswordTab() {
 
 // ── Billing tab ───────────────────────────────────────────────────
 function BillingTab({ user }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const isPro = user?.plan === "pro";
   const isLifetime = user?.subscription_status === "lifetime";
@@ -367,19 +368,21 @@ function BillingTab({ user }) {
 }
 
 // ── Main Profile (modal overlay) ──────────────────────────────────
-const TABS = [
-  { id: "profile", label: t("profile.tab_profile"), icon: User },
-  { id: "password", label: t("profile.tab_password"), icon: Lock },
-  { id: "billing", label: t("profile.tab_billing"), icon: CreditCard },
-  { id: "notifications", label: t("profile.tab_notifications"), icon: Bell },
-];
+// TABS defined inside component
 
 export default function Profile({ onClose }) {
   const navigate = useNavigate();
   const { user, refresh } = useAuth();
+  const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState("profile");
   const setTab = (id) => setActiveTabState(id);
   const isPro = user?.plan === "pro";
+  const TABS = [
+    { id: "profile", label: t("profile.tab_profile"), icon: User },
+    { id: "password", label: t("profile.tab_password"), icon: Lock },
+    { id: "billing", label: t("profile.tab_billing"), icon: CreditCard },
+    { id: "notifications", label: t("profile.tab_notifications"), icon: Bell },
+  ];
 
   const close = onClose || (() => navigate(-1));
 
@@ -446,7 +449,7 @@ export default function Profile({ onClose }) {
           {activeTab === "notifications" && (
             <div className="py-8 text-center">
               <Bell size={28} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">Notification settings coming soon</p>
+              <p className="text-sm text-gray-400">{t("profile.notifications_soon")}</p>
             </div>
           )}
         </div>
