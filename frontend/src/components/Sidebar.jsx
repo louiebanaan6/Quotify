@@ -12,6 +12,7 @@ import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { useProject } from "../lib/ProjectContext";
 import { api, LOGO_URL } from "../lib/api";
+import Profile from "../pages/Profile";
 import { toast } from "sonner";
 
 const COLLAPSED_KEY = "quotify_sidebar_collapsed";
@@ -671,13 +672,13 @@ export default function Sidebar() {
               <p className="text-[10px] text-gray-400 mt-0.5">{user?.plan === "pro" ? "Pro plan" : "Free plan"}</p>
             </div>
           )}
-          <button onClick={() => { setAccountOpen(false); navigate("/profile"); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50" data-testid="account-profile">
+          <button onClick={() => { setAccountOpen(false); setProfileOpen(true); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50" data-testid="account-profile">
             <User size={13} className="text-gray-400 shrink-0" /> Profile
           </button>
-          <button onClick={() => { setAccountOpen(false); navigate("/profile?tab=password"); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50" data-testid="account-password">
+          <button onClick={() => { setAccountOpen(false); setProfileOpen(true); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50" data-testid="account-password">
             <Lock size={13} className="text-gray-400 shrink-0" /> Change password
           </button>
-          <button onClick={() => { setAccountOpen(false); navigate("/profile?tab=billing"); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50" data-testid="account-billing">
+          <button onClick={() => { setAccountOpen(false); setProfileOpen(true); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50" data-testid="account-billing">
             <CreditCard size={13} className="text-gray-400 shrink-0" /> Billing
           </button>
           <div className="border-t border-[#E5E7EB] mt-0.5 pt-0.5">
@@ -819,6 +820,12 @@ export default function Sidebar() {
             setSettingsProjectData(null);
           }}
         />
+      )}
+      {/* Profile modal */}
+      {profileOpen && (
+        <div className="fixed inset-0 z-[70]">
+          <Profile onClose={() => setProfileOpen(false)} />
+        </div>
       )}
     </>
   );
