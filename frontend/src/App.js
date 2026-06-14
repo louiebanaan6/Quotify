@@ -9,6 +9,7 @@ import { Toaster } from "sonner";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ForgotPassword from "@/pages/ForgotPassword";
+import AcceptInvite from "@/pages/AcceptInvite";
 import Dashboard from "@/pages/Dashboard";
 import QuotesList from "@/pages/QuotesList";
 import QuoteForm from "@/pages/QuoteForm";
@@ -23,9 +24,9 @@ function Protected({ children }) {
   const { user } = useAuth();
   const loc = useLocation();
   if (user === undefined) return (
-    <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">Loading…</div>
+    <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">Loading...</div>
   );
-  if (user === null) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+  if (user === null) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   return children;
 }
 
@@ -50,6 +51,9 @@ export default function App() {
                 <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
                 <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
 
+                {/* Invite accept — accessible logged in or not */}
+                <Route path="/invite/accept" element={<AcceptInvite />} />
+
                 {/* Protected */}
                 <Route path="/" element={<Protected><Dashboard /></Protected>} />
                 <Route path="/quotes" element={<Protected><QuotesList /></Protected>} />
@@ -60,7 +64,6 @@ export default function App() {
                 <Route path="/invoices/:id" element={<Protected><InvoiceDetail /></Protected>} />
                 <Route path="/clients" element={<Protected><Clients /></Protected>} />
                 <Route path="/profile" element={<Protected><Profile /></Protected>} />
-                {/* /billing still works as direct link; also accessible via /profile?tab=billing */}
                 <Route path="/billing" element={<Protected><Billing /></Protected>} />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
