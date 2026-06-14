@@ -776,29 +776,34 @@ async def invite_member(project_id: str, req: InviteMemberRequest, user: dict = 
     result = await db.team_members.insert_one({**doc})
     doc.pop("_id", None)
     accept_url = f"https://panel.quotify.site/invite/accept?token={token}"
-    html = f"""
-    <div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px;">
-      <div style="margin-bottom:32px;"><span style="font-size:22px;font-weight:800;color:#111;">🌿 QUOTIFY</span></div>
-      <h2 style="font-size:24px;font-weight:700;color:#111;margin-bottom:8px;">You've been invited!</h2>
-      <p style="color:#666;margin-bottom:24px;">
-        <strong>{user.get('name') or user['email']}</strong> has invited you to join
-        <strong>"{project['name']}"</strong> on Quotify.
-      </p>
-      <a href="{accept_url}" style="display:inline-block;background:#0066FF;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">Accept invitation</a>
-      <p style="color:#aaa;font-size:13px;margin-top:24px;">If you don't have a Quotify account yet, you'll be asked to create one first.</p>
-      <hr style="border:none;border-top:1px solid #f0f0f0;margin:32px 0;" />
-      <p style="color:#aaa;font-size:12px;">© 2025 Quotify · support@quotify.site</p>
-    </div>
-    """
+    inviter_name = user.get("name") or user["email"]
+    project_name_var = project["name"]
+    subject_line = inviter_name + " invited you to " + project_name_var + " on Quotify"
+    html = (
+        "<div style='font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px;'>"
+        "<div style='margin-bottom:32px;'><span style='font-size:22px;font-weight:800;color:#111;'>QUOTIFY</span></div>"
+        "<h2 style='font-size:24px;font-weight:700;color:#111;margin-bottom:8px;'>You have been invited!</h2>"
+        "<p style='color:#666;margin-bottom:24px;'>You have been invited to join <strong>"
+        + project_name_var +
+        "</strong> on Quotify.</p>"
+        "<a href='" + accept_url + "' style='display:inline-block;background:#0066FF;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;'>Accept invitation</a>"
+        "<p style='color:#aaa;font-size:13px;margin-top:24px;'>If you do not have a Quotify account yet, you will be asked to create one first.</p>"
+        "<hr style='border:none;border-top:1px solid #f0f0f0;margin:32px 0;' />"
+        "<p style='color:#aaa;font-size:12px;'>Quotify &middot; support@quotify.site</p>"
+        "</div>"
+    )
     if resend.api_key:
         try:
             await asyncio.to_thread(resend.Emails.send, {
-                "from": SENDER_EMAIL, "to": [invite_email],
-                "subject": f"{user.get('name') or 'Someone'} invited you to {project['name']} on Quotify",
+                "from": SENDER_EMAIL,
+                "to": [invite_email],
+                "subject": subject_line,
                 "html": html,
             })
         except Exception as e:
-            logger.error(f"Invite email error: {e}")
+            logger.error("Invite email error: " + str(e))
+    else:
+        logger.info("MOCK invite to " + invite_email + " token=" + token)
     return doc
 
 @api_router.post("/invite/accept")
