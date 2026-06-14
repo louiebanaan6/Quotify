@@ -1,6 +1,6 @@
 // frontend/src/pages/Profile.jsx
 import React, { useEffect, useState, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n, LANGUAGES } from "../lib/i18n";
@@ -373,31 +373,31 @@ const TABS = [
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
 
-export default function Profile() {
+export default function Profile({ onClose }) {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const { user, refresh } = useAuth();
-  const activeTab = searchParams.get("tab") || "profile";
-  const setTab = (id) => setSearchParams({ tab: id }, { replace: true });
+  const [activeTab, setActiveTabState] = useState("profile");
+  const setTab = (id) => setActiveTabState(id);
   const isPro = user?.plan === "pro";
+
+  const close = onClose || (() => navigate(-1));
 
   // Close on Escape
   useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") navigate(-1); };
+    const handler = (e) => { if (e.key === "Escape") close(); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [navigate]);
+  }, []);
 
   return (
-    // Full-screen overlay with backdrop
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4 py-8">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-8" style={{ backdropFilter: "blur(2px)" }} onClick={close}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
         <div className="px-6 pt-6 pb-0 shrink-0">
           {/* Close button */}
           <div className="flex justify-end mb-4">
-            <button onClick={() => navigate(-1)}
+            <button onClick={close}
               className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors">
               <X size={18} />
             </button>
