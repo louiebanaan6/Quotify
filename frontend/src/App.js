@@ -17,7 +17,6 @@ import QuoteDetail from "@/pages/QuoteDetail";
 import InvoicesList from "@/pages/InvoicesList";
 import InvoiceDetail from "@/pages/InvoiceDetail";
 import Clients from "@/pages/Clients";
-import Profile from "@/pages/Profile";
 import Billing from "@/pages/Billing";
 
 function Protected({ children }) {
@@ -50,8 +49,6 @@ export default function App() {
                 <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
                 <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
                 <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
-
-                {/* Invite accept — accessible logged in or not */}
                 <Route path="/invite/accept" element={<AcceptInvite />} />
 
                 {/* Protected */}
@@ -63,8 +60,10 @@ export default function App() {
                 <Route path="/invoices" element={<Protected><InvoicesList /></Protected>} />
                 <Route path="/invoices/:id" element={<Protected><InvoiceDetail /></Protected>} />
                 <Route path="/clients" element={<Protected><Clients /></Protected>} />
-                <Route path="/profile" element={<Protected><Profile /></Protected>} />
                 <Route path="/billing" element={<Protected><Billing /></Protected>} />
+
+                {/* /profile redirects to home — modal opens from sidebar */}
+                <Route path="/profile" element={<Navigate to="/" replace />} />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
