@@ -35,7 +35,7 @@ function Avatar({ user, size = 64 }) {
 
 // ── Profile tab ──────────────────────────────────────────────────
 function ProfileTab({ user, onRefresh }) {
-  const { setLang } = useI18n();
+  const { t, setLang } = useI18n();
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [language, setLanguage] = useState(user?.language || "en");
@@ -58,7 +58,7 @@ function ProfileTab({ user, onRefresh }) {
       });
       setPhotoPreview(res.data.profile_photo);
       await onRefresh();
-      toast.success("Photo updated");
+      toast.success(t("profile.photo_updated"));
     } catch { toast.error("Upload failed"); }
   };
 
@@ -68,7 +68,7 @@ function ProfileTab({ user, onRefresh }) {
     try {
       await api.put("/settings", { name: name.trim() });
       await onRefresh();
-      toast.success("Name updated");
+      toast.success(t("profile.name_updated"));
     } catch { toast.error("Failed"); } finally { setSavingName(false); }
   };
 
@@ -78,7 +78,7 @@ function ProfileTab({ user, onRefresh }) {
     try {
       await api.post("/auth/change-email/request", { new_email: email });
       setEmailStep("otp");
-      toast.success("Code sent to your current email");
+      toast.success(t("profile.code_sent"));
     } catch (e) {
       toast.error(e.response?.data?.detail || "Failed");
     } finally { setSavingEmail(false); }
@@ -90,7 +90,7 @@ function ProfileTab({ user, onRefresh }) {
       await api.post("/auth/change-email/verify", { otp });
       await onRefresh();
       setEmailStep("idle"); setOtp("");
-      toast.success("Email updated");
+      toast.success(t("profile.email_updated"));
     } catch (e) {
       toast.error(e.response?.data?.detail || "Invalid code");
     } finally { setSavingEmail(false); }
@@ -139,7 +139,7 @@ function ProfileTab({ user, onRefresh }) {
             onKeyDown={(e) => e.key === "Enter" && saveName()} placeholder="Your name" />
           <button onClick={saveName} disabled={savingName || !name.trim() || name === user?.name}
             className="q-btn-primary shrink-0 disabled:opacity-40">
-            {savingName ? "..." : "Save"}
+            {savingName ? "..." : t("profile.save")}
           </button>
         </div>
       </div>
@@ -154,7 +154,7 @@ function ProfileTab({ user, onRefresh }) {
             <button onClick={requestEmailChange}
               disabled={savingEmail || !email || email === user?.email}
               className="q-btn-secondary shrink-0 disabled:opacity-40">
-              {savingEmail ? "..." : "Change"}
+              {savingEmail ? "..." : t("profile.save")}
             </button>
           </div>
         ) : (
@@ -199,6 +199,7 @@ function ProfileTab({ user, onRefresh }) {
 
 // ── Password tab ─────────────────────────────────────────────────
 function PasswordTab() {
+  const { t } = useI18n();
   const [step, setStep] = useState("idle");
   const [current, setCurrent] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -228,7 +229,7 @@ function PasswordTab() {
     e.preventDefault(); setErr(""); setBusy(true);
     try {
       await api.post("/auth/change-password/verify", { otp: otpVal });
-      toast.success("Password changed");
+      toast.success(t("profile.pw_changed"));
       setStep("idle"); setCurrent(""); setNewPw(""); setConfirm(""); setOtpVal("");
     } catch (ex) { setErr(ex.response?.data?.detail || "Invalid code."); }
     finally { setBusy(false); }
@@ -269,7 +270,7 @@ function PasswordTab() {
       </div>
       {err && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
       <button type="submit" disabled={busy || !canSubmit} className="q-btn-primary w-full justify-center disabled:opacity-40">
-        {busy ? "Sending code..." : "Send confirmation code"}
+        {busy ? "Sending code..." : t("profile.pw_send_code")}
       </button>
     </form>
   );
@@ -284,7 +285,7 @@ function PasswordTab() {
         className="q-input w-full text-center text-3xl tracking-[0.5em] font-semibold py-4" placeholder="000000" />
       {err && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
       <button type="submit" disabled={busy || otpVal.length < 6} className="q-btn-primary w-full justify-center disabled:opacity-40">
-        {busy ? "Verifying..." : "Confirm change"}
+        {busy ? "Verifying..." : t("profile.pw_confirm_change")}
       </button>
       <div className="flex justify-between pt-1">
         <button type="button" onClick={() => { setStep("idle"); setErr(""); setOtpVal(""); }} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
@@ -367,10 +368,10 @@ function BillingTab({ user }) {
 
 // ── Main Profile (modal overlay) ──────────────────────────────────
 const TABS = [
-  { id: "profile", label: "Profile", icon: User },
-  { id: "password", label: "Password", icon: Lock },
-  { id: "billing", label: "Billing", icon: CreditCard },
-  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "profile", label: t("profile.tab_profile"), icon: User },
+  { id: "password", label: t("profile.tab_password"), icon: Lock },
+  { id: "billing", label: t("profile.tab_billing"), icon: CreditCard },
+  { id: "notifications", label: t("profile.tab_notifications"), icon: Bell },
 ];
 
 export default function Profile({ onClose }) {
