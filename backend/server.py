@@ -786,19 +786,30 @@ async def invite_member(project_id: str, req: InviteMemberRequest, user: dict = 
     inviter_name = user.get("name") or user["email"]
     project_name_var = project["name"]
     subject_line = inviter_name + " invited you to " + project_name_var + " on Quotify"
-    html = (
-        "<div style='font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px;'>"
-        "<div style='margin-bottom:32px;'><span style='font-size:22px;font-weight:800;color:#111;'>QUOTIFY</span></div>"
-        "<h2 style='font-size:24px;font-weight:700;color:#111;margin-bottom:8px;'>You have been invited!</h2>"
-        "<p style='color:#666;margin-bottom:24px;'>You have been invited to join <strong>"
-        + project_name_var +
-        "</strong> on Quotify.</p>"
-        "<a href='" + accept_url + "' style='display:inline-block;background:#0066FF;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;'>Accept invitation</a>"
-        "<p style='color:#aaa;font-size:13px;margin-top:24px;'>If you do not have a Quotify account yet, you will be asked to create one first.</p>"
-        "<hr style='border:none;border-top:1px solid #f0f0f0;margin:32px 0;' />"
-        "<p style='color:#aaa;font-size:12px;'>Quotify &middot; support@quotify.site</p>"
-        "</div>"
-    )
+    html = f"""
+<div style="font-family:Inter,sans-serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#ffffff;">
+  <div style="margin-bottom:32px;">
+    <span style="font-size:22px;font-weight:800;color:#111111;letter-spacing:-0.5px;">QUOTIFY</span>
+  </div>
+  <h2 style="font-size:22px;font-weight:700;color:#111111;margin:0 0 12px 0;">You have been invited!</h2>
+  <p style="color:#555555;font-size:15px;line-height:1.6;margin:0 0 28px 0;">
+    <strong>{inviter_name}</strong> has invited you to join the project
+    <strong>{project_name_var}</strong> on Quotify.
+  </p>
+  <a href="{accept_url}"
+     style="display:inline-block;background:#0066FF;color:#ffffff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;letter-spacing:0.2px;">
+    Accept invitation
+  </a>
+  <p style="color:#999999;font-size:13px;margin-top:24px;line-height:1.5;">
+    If you do not have a Quotify account yet, you will be asked to create one first.<br>
+    If you did not expect this invitation, you can ignore this email.
+  </p>
+  <hr style="border:none;border-top:1px solid #eeeeee;margin:32px 0;" />
+  <p style="color:#aaaaaa;font-size:12px;margin:0;">
+    &copy; 2025 Quotify &middot; support@quotify.site
+  </p>
+</div>
+"""
     if resend.api_key:
         try:
             await asyncio.to_thread(resend.Emails.send, {
