@@ -637,7 +637,14 @@ async def get_logo(user: dict = Depends(get_current_user)):
 @api_router.get("/projects")
 async def list_projects(user: dict = Depends(get_current_user)):
     owned = await db.projects.find({"owner_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(100)
-    memberships = await db.team_members.find({"member_email": user["email"], "status": "accepted"}, {"_id": 0}).to_list(100)
+    # Match by member_id (set on accept) OR email (case-insensitive)
+    memberships = await db.team_members.find(
+        {"$or": [
+            {"member_id": user["id"], "status": "accepted"},
+            {"member_email": user["email"].lower().strip(), "status": "accepted"},
+        ]},
+        {"_id": 0}
+    ).to_list(100)
     member_project_ids = [m["project_id"] for m in memberships]
     member_projects = []
     if member_project_ids:
@@ -893,7 +900,7 @@ async def leave_project(project_id: str, user: dict = Depends(get_current_user))
 async def get_pending_invites(user: dict = Depends(get_current_user)):
     """Return pending invites for the current user's email."""
     invites = await db.team_members.find(
-        {"member_email": user["email"], "status": "pending"},
+        {"member_email": user["email"].lower().strip(), "status": "pending"},
         {"_id": 0}
     ).to_list(50)
     return invites
