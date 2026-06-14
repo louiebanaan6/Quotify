@@ -122,7 +122,7 @@ function InviteBanner({ invites, onAccept, onDecline }) {
   );
 }
 
-function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProjectDeleted, leaveProject }) {
+function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProjectDeleted, leaveProject, ownedProjectCount }) {
   const [tab, setTab] = useState("general");
   const [form, setForm] = useState({
     company_name: project.company_name || "",
@@ -198,7 +198,8 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     try {
       await api.put(`/projects/${project.id}`, { name: projectName.trim() });
       toast.success("Project renamed");
-      onProjectChanged?.();
+      // Use a timeout so we don't re-render the modal mid-blur
+      setTimeout(() => onProjectChanged?.(), 100);
     } catch {
       toast.error("Failed to rename");
     } finally {
@@ -313,9 +314,9 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 style={{ fontFamily: "Manrope" }}
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                onBlur={saveName}
-                onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.target.blur(); saveName(); } }}
                 disabled={!isOwner}
+                placeholder="Project name"
               />
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${user?.plan === "pro" ? "text-[#0066FF] bg-blue-50 border border-blue-100" : "text-gray-500 bg-gray-100 border border-gray-200"}`}>
@@ -493,7 +494,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 </Field>
                 <button
                   onClick={deleteProject}
-                  disabled={deleteConfirm !== project.name || deleting || projects.filter(p => p.owner_id === user?.id).length <= 1}
+                  disabled={deleteConfirm !== project.name || deleting || ownedProjectCount <= 1}
                   className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Trash2 size={14} /> {deleting ? "Deleting..." : "Delete project permanently"}
@@ -813,6 +814,7 @@ export default function Sidebar() {
           project={settingsProjectData}
           user={user}
           leaveProject={leaveProject}
+          ownedProjectCount={projects.filter(p => p.owner_id === user?.id).length}
           onClose={() => { setSettingsProject(null); setSettingsProjectData(null); }}
           onProjectChanged={async () => {
             await loadProjects();
