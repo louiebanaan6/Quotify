@@ -492,6 +492,11 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 <Field label={"Type \"" + project.name + "\" to confirm"}>
                   <input className="q-input border-red-300 focus:ring-red-100 mt-1" placeholder={project.name} value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} />
                 </Field>
+                {ownedProjectCount <= 1 && (
+                  <p className="text-xs text-red-700 font-medium mt-3 bg-red-100 border border-red-200 rounded-lg px-3 py-2">
+                    This is your only project — you cannot delete it. Create another project first.
+                  </p>
+                )}
                 <button
                   onClick={deleteProject}
                   disabled={deleteConfirm !== project.name || deleting || ownedProjectCount <= 1}
