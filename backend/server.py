@@ -105,12 +105,12 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_access_token(user_id: str, email: str) -> str:
     payload = {"sub": user_id, "email": email,
-               "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "access"}
+               "exp": datetime.now(timezone.utc) + timedelta(days=10), "type": "access"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def set_auth_cookie(response: Response, token: str):
     response.set_cookie(key="access_token", value=token, httponly=True, secure=True,
-                        samesite="none", max_age=60 * 60 * 24 * 7, path="/")
+                        samesite="none", max_age=60 * 60 * 24 * 10, path="/")
 
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
@@ -1600,12 +1600,12 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_access_token(user_id: str, email: str) -> str:
     payload = {"sub": user_id, "email": email,
-               "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "access"}
+               "exp": datetime.now(timezone.utc) + timedelta(days=10), "type": "access"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def set_auth_cookie(response: Response, token: str):
     response.set_cookie(key="access_token", value=token, httponly=True, secure=True,
-                        samesite="none", max_age=60 * 60 * 24 * 7, path="/")
+                        samesite="none", max_age=60 * 60 * 24 * 10, path="/")
 
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
