@@ -773,7 +773,7 @@ async def invite_member(project_id: str, req: InviteMemberRequest, user: dict = 
         "member_email": invite_email, "token": token, "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    await db.team_members.insert_one(doc)
+    result = await db.team_members.insert_one({**doc})
     doc.pop("_id", None)
     accept_url = f"https://panel.quotify.site/invite/accept?token={token}"
     html = f"""
