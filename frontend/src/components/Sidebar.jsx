@@ -52,7 +52,7 @@ function ProjectLogo({ project, onUploaded, size = 60 }) {
         headers: { "Content-Type": "multipart/form-data" },
       });
       onUploaded?.(res.data.logo_data);
-      toast.success("Logo updated");
+      toast.success(t("project_settings.logo_updated"));
     } catch {
       toast.error("Upload failed");
     }
@@ -123,6 +123,7 @@ function InviteBanner({ invites, onAccept, onDecline }) {
 }
 
 function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProjectDeleted, leaveProject, ownedProjectCount }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState("general");
   const [form, setForm] = useState({
     company_name: project.company_name || "",
@@ -183,7 +184,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
         phone: form.phone,
         accent_color: form.accent_color,
       });
-      toast.success("Settings saved");
+      toast.success(t("project_settings.saved"));
       onProjectChanged?.();
     } catch {
       toast.error("Failed to save");
@@ -197,7 +198,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     setSavingName(true);
     try {
       await api.put(`/projects/${project.id}`, { name: projectName.trim() });
-      toast.success("Project renamed");
+      toast.success(t("project_settings.renamed"));
       // Use a timeout so we don't re-render the modal mid-blur
       setTimeout(() => onProjectChanged?.(), 100);
     } catch {
@@ -213,7 +214,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     setInviting(true);
     try {
       await api.post(`/projects/${project.id}/invite`, { email: inviteEmail.trim() });
-      toast.success("Invitation sent to " + inviteEmail);
+      toast.success(t("project_settings.invited") + " " + inviteEmail);
       setInviteEmail("");
       const r = await api.get(`/projects/${project.id}/members`);
       setMembers(Array.isArray(r.data) ? r.data : (r.data.members || []));
@@ -229,7 +230,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     try {
       await api.delete(`/projects/${project.id}/members/${memberId}`);
       setMembers((prev) => prev.filter((m) => m.id !== memberId));
-      toast.success("Member removed");
+      toast.success(t("project_settings.removed"));
     } catch (ex) {
       toast.error(ex.response?.data?.detail || "Failed");
     } finally {
@@ -241,7 +242,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     if (!window.confirm("Transfer ownership to " + memberEmail + "? You will become a regular member.")) return;
     try {
       await api.post(`/projects/${project.id}/transfer-owner`, { new_owner_id: memberId });
-      toast.success("Ownership transferred");
+      toast.success(t("project_settings.transferred"));
       onProjectChanged?.();
       onClose();
     } catch (ex) {
@@ -253,7 +254,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     if (!window.confirm("Leave " + project.name + "?")) return;
     try {
       await leaveProject(project.id);
-      toast.success("Left project");
+      toast.success(t("project_settings.left"));
       onClose();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Failed");
@@ -265,7 +266,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
     setDeleting(true);
     try {
       await api.delete(`/projects/${project.id}`);
-      toast.success("Project deleted");
+      toast.success(t("project_settings.deleted"));
       onProjectDeleted?.();
       onClose();
     } catch (ex) {
@@ -278,9 +279,9 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
   };
 
   const TABS = [
-    { id: "general", label: "General" },
-    { id: "team", label: "Team" },
-    ...(isOwner ? [{ id: "danger", label: "Danger" }] : []),
+    { id: "general", label: t("project_settings.general") },
+    { id: "team", label: t("project_settings.team") },
+    ...(isOwner ? [{ id: "danger", label: t("project_settings.danger") }] : []),
   ];
 
   return (
@@ -352,31 +353,31 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Company name">
+                <Field label={t("project_settings.company_name")}>
                   <input className="q-input" value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} placeholder="Acme BV" />
                 </Field>
-                <Field label="VAT number">
+                <Field label={t("project_settings.vat")}>
                   <input className="q-input" value={form.vat_number} onChange={(e) => setForm({ ...form, vat_number: e.target.value })} placeholder="BE0123456789" />
                 </Field>
-                <Field label="Phone">
+                <Field label={t("project_settings.phone")}>
                   <input className="q-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+32 ..." />
                 </Field>
-                <Field label="Bank account">
+                <Field label={t("project_settings.bank")}>
                   <input className="q-input" value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} placeholder="BE68 ..." />
                 </Field>
                 <div className="sm:col-span-2">
-                  <Field label="Address">
+                  <Field label={t("project_settings.address")}>
                     <textarea rows={2} className="q-input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
                   </Field>
                 </div>
               </div>
 
-              <Field label="Email signature">
+              <Field label={t("project_settings.signature")}>
                 <textarea rows={3} className="q-input" placeholder={"Best regards,\nYour Name"} value={form.email_signature} onChange={(e) => setForm({ ...form, email_signature: e.target.value })} />
                 <p className="text-xs text-gray-400 mt-1">Appears at the bottom of every quote email.</p>
               </Field>
 
-              <Field label="Brand color">
+              <Field label={t("project_settings.brand_color")}>
                 <div className="flex items-center gap-3 mt-1">
                   <input type="color" value={form.accent_color} onChange={(e) => setForm({ ...form, accent_color: e.target.value })} className="w-10 h-10 rounded-lg border border-[#E5E7EB] cursor-pointer p-1 bg-white shrink-0" />
                   <input type="text" className="q-input flex-1 font-mono text-sm" value={form.accent_color} onChange={(e) => setForm({ ...form, accent_color: e.target.value })} />
@@ -391,7 +392,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
 
               <div className="pt-1 flex justify-end">
                 <button onClick={saveGeneral} disabled={savingGeneral} className="q-btn-primary disabled:opacity-40">
-                  {savingGeneral ? "Saving..." : "Save changes"}
+                  {savingGeneral ? t("project_settings.saving") : t("project_settings.save")}
                 </button>
               </div>
             </div>
@@ -403,9 +404,9 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Invite member</p>
                   <form onSubmit={invite} className="flex gap-2">
-                    <input type="email" required className="q-input flex-1" placeholder="colleague@company.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+                    <input type="email" required className="q-input flex-1" placeholder={t("project_settings.invite_ph")} value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
                     <button type="submit" disabled={inviting || !inviteEmail.trim()} className="q-btn-primary shrink-0 disabled:opacity-40">
-                      {inviting ? "Sending..." : "Invite"}
+                      {inviting ? t("project_settings.inviting") : t("project_settings.invite_btn")}
                     </button>
                   </form>
                   <p className="text-xs text-gray-400 mt-1.5">Max 5 members. They will receive an email invite.</p>
@@ -428,7 +429,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                         <p className="text-xs text-gray-500 truncate">{user?.email}</p>
                       </div>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${isOwner ? "text-[#0066FF] bg-blue-50 border border-blue-100" : "text-gray-500 bg-gray-100 border border-gray-200"}`}>
-                        {isOwner ? "Owner" : "Member"}
+                        {isOwner ? t("project_settings.owner") : "Member"}
                       </span>
                     </div>
 
@@ -450,11 +451,11 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                         {isOwner && (
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                             {m.status === "accepted" && (
-                              <button onClick={() => transferOwnership(m.member_id, m.member_email)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-[#0066FF] transition-colors" title="Transfer ownership">
+                              <button onClick={() => transferOwnership(m.member_id, m.member_email)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-[#0066FF] transition-colors" title={t("project_settings.transfer")}>
                                 <Shield size={13} />
                               </button>
                             )}
-                            <button onClick={() => removeMember(m.id)} disabled={removingId === m.id} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-40" title="Remove member">
+                            <button onClick={() => removeMember(m.id)} disabled={removingId === m.id} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-40" title={t("project_settings.remove")}>
                               <X size={13} />
                             </button>
                           </div>
@@ -470,7 +471,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                   <p className="text-sm font-semibold text-red-800 mb-1">Leave project</p>
                   <p className="text-xs text-red-600 mb-3">You will lose access to all quotes, invoices and clients in this project.</p>
                   <button onClick={handleLeave} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors">
-                    <LogOut size={13} /> Leave project
+                    <LogOut size={13} /> {t("project_settings.leave")}
                   </button>
                 </div>
               )}
@@ -489,7 +490,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                     </p>
                   </div>
                 </div>
-                <Field label={"Type \"" + project.name + "\" to confirm"}>
+                <Field label={t("project_settings.delete_confirm_label") + " \"" + project.name + "\""}>
                   <input className="q-input border-red-300 focus:ring-red-100 mt-1" placeholder={project.name} value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} />
                 </Field>
                 {ownedProjectCount <= 1 && (
@@ -502,7 +503,7 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                   disabled={deleteConfirm !== project.name || deleting || ownedProjectCount <= 1}
                   className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Trash2 size={14} /> {deleting ? "Deleting..." : "Delete project permanently"}
+                  <Trash2 size={14} /> {deleting ? t("project_settings.deleting") : t("project_settings.delete_btn")}
                 </button>
               </div>
             </div>
@@ -807,7 +808,7 @@ export default function Sidebar() {
               )}
               <div className="flex gap-2 pt-1">
                 <button type="button" onClick={() => { setNewProjectModal(false); setCreateErr(""); }} className="q-btn-secondary flex-1 justify-center">Cancel</button>
-                <button type="submit" disabled={creating} className="q-btn-primary flex-1 justify-center">{creating ? "Creating..." : "Create"}</button>
+                <button type="submit" disabled={creating} className="q-btn-primary flex-1 justify-center">{creating ? t("project_settings.creating") : t("project_settings.create")}</button>
               </div>
             </form>
           </div>
