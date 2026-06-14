@@ -268,7 +268,9 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
       onProjectDeleted?.();
       onClose();
     } catch (ex) {
-      toast.error(ex.response?.data?.detail || "Failed");
+      const msg = ex.response?.data?.detail || "Failed to delete";
+      toast.error(msg);
+      setDeleteConfirm("");
     } finally {
       setDeleting(false);
     }
@@ -489,7 +491,11 @@ function ProjectSettingsModal({ project, user, onClose, onProjectChanged, onProj
                 <Field label={"Type \"" + project.name + "\" to confirm"}>
                   <input className="q-input border-red-300 focus:ring-red-100 mt-1" placeholder={project.name} value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} />
                 </Field>
-                <button onClick={deleteProject} disabled={deleteConfirm !== project.name || deleting} className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <button
+                  onClick={deleteProject}
+                  disabled={deleteConfirm !== project.name || deleting || projects.filter(p => p.owner_id === user?.id).length <= 1}
+                  className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
                   <Trash2 size={14} /> {deleting ? "Deleting..." : "Delete project permanently"}
                 </button>
               </div>
