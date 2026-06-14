@@ -32,13 +32,13 @@ export default function AcceptInvite() {
       }
 
       if (data.ok) {
+        // Save token so Bearer header works cross-origin
+        if (data.token) localStorage.setItem("quotify_token", data.token);
         setProjectName(data.project_name || "the project");
-        // Refresh auth + projects so sidebar updates immediately
         await refresh();
         await loadProjects();
         await loadPendingInvites();
         setStatus("success");
-        // Redirect to dashboard after 2s
         setTimeout(() => navigate("/"), 2000);
       }
     } catch (e) {
