@@ -1471,7 +1471,9 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    client.close()from dotenv import load_dotenv
+    client.close()
+
+from dotenv import load_dotenv
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
