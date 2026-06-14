@@ -582,7 +582,7 @@ export default function Sidebar() {
     navigate("/login");
   };
 
-  const ProjectSwitcher = () => (
+  const renderProjectSwitcher = () => (
     <div ref={projectRef} className="relative px-2 pb-1">
       <div className="border-t border-[#E5E7EB] mb-1" />
       <button
@@ -642,7 +642,7 @@ export default function Sidebar() {
     </div>
   );
 
-  const AccountBlock = () => (
+  const renderAccountBlock = () => (
     <div ref={accountRef} className="relative px-2 pb-2 pt-1">
       <button
         onClick={() => setAccountOpen((v) => !v)}
@@ -690,7 +690,7 @@ export default function Sidebar() {
     </div>
   );
 
-  const SidebarContent = ({ onNavigate }) => (
+  const renderSidebarContent = (onNavigate) => (
     <div className="flex flex-col h-full overflow-hidden">
       <div className={"h-[72px] flex items-center border-b border-[#E5E7EB] shrink-0 px-4 " + (collapsed ? "justify-center" : "justify-between")}>
         <img src={LOGO_URL} alt="Quotify" className={"object-contain " + (collapsed ? "h-7" : "h-8")} />
@@ -742,8 +742,8 @@ export default function Sidebar() {
         }}
       />
 
-      <ProjectSwitcher />
-      <AccountBlock />
+      {renderProjectSwitcher()}
+      {renderAccountBlock()}
     </div>
   );
 
@@ -754,7 +754,7 @@ export default function Sidebar() {
         style={{ background: "#F7F8FA" }}
         data-testid="app-sidebar"
       >
-        <SidebarContent />
+        {renderSidebarContent(undefined)}
       </aside>
 
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 h-[56px] flex items-center justify-between px-4 bg-white border-b border-[#E5E7EB]">
@@ -771,7 +771,7 @@ export default function Sidebar() {
             <button onClick={() => setMobileOpen(false)} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-200 z-10">
               <X size={18} />
             </button>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            {renderSidebarContent(() => setMobileOpen(false))}
           </aside>
         </div>
       )}
