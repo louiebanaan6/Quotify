@@ -89,9 +89,11 @@ export function ProjectProvider({ children }) {
   };
 
   const acceptInvite = async (token) => {
-    // POST to backend — returns {ok, project_id, project_name}
+    // POST to backend — returns {ok, project_id, project_name, token}
     const { data } = await api.post(`/invite/accept?token=${token}`);
     if (data.ok) {
+      // Save token so Bearer header works cross-origin
+      if (data.token) localStorage.setItem("quotify_token", data.token);
       // Force reload with the accepted project as active
       await _fetchProjects(data.project_id);
       await _fetchPendingInvites();
